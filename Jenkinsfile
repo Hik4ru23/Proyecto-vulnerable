@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        // Nombre del servidor SonarQube configurado en Jenkins
+        // Configura tu servidor SonarQube (mismo nombre que en "Manage Jenkins → Configure System")
         SONARQUBE_SERVER = 'MySonarQube'
-        // Clave única del proyecto en SonarQube
+        // Clave del proyecto configurada en SonarQube
         SONAR_PROJECT_KEY = 'mi-proyecto'
     }
 
@@ -24,7 +24,7 @@ pipeline {
         stage('Test') {
             steps {
                 echo '🧪 Ejecutando pruebas unitarias...'
-                // Ejemplo: ejecutar pruebas con pytest
+                // Ejemplo de pruebas (ajusta según tu lenguaje)
                 // sh 'pytest || echo "No hay pruebas unitarias definidas"'
             }
         }
@@ -33,20 +33,21 @@ pipeline {
         stage('Analyze - SonarQube') {
             steps {
                 echo '📊 Analizando calidad de código con SonarQube...'
+                script {
+                    // Inyecta variables del servidor SonarQube configurado
+                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                        // Busca la herramienta Sonar Scanner configurada en Jenkins
+                        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
 
-                // Inyecta las variables del servidor SonarQube configurado
-                withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                    // Detecta la ruta del scanner configurado en Jenkins
-                    def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-
-                    // Ejecuta el análisis con parámetros para proyectos Python
-                    sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.sources=. \
-                        -Dsonar.language=py \
-                        -Dsonar.sourceEncoding=UTF-8
-                    """
+                        // Ejecuta el análisis de calidad de código
+                        sh """
+                            ${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.sources=. \
+                                -Dsonar.language=py \
+                                -Dsonar.sourceEncoding=UTF-8
+                        """
+                    }
                 }
             }
         }
@@ -55,6 +56,7 @@ pipeline {
         stage('Security - Dependency Check') {
             steps {
                 echo '🛡️ Ejecutando análisis de dependencias (OWASP Dependency-Check)...'
+                // Analiza dependencias y genera un reporte HTML
                 dependencyCheck additionalArguments: '--scan . --format HTML --out reports', odcInstallation: 'Default'
                 dependencyCheckPublisher pattern: 'reports/dependency-check-report.html'
             }
@@ -64,10 +66,12 @@ pipeline {
         stage('Security - OWASP ZAP') {
             steps {
                 echo '🔍 Ejecutando escaneo dinámico de seguridad (OWASP ZAP)...'
+                // Ejecuta ZAP en Docker y genera reporte HTML
                 sh '''
                     docker run --rm -v $(pwd):/zap/wrk owasp/zap2docker-stable \
                     zap-baseline.py -t http://host.docker.internal:5000 -r zap-report.html || true
                 '''
+                // Publica el reporte como artefacto del build
                 archiveArtifacts artifacts: 'zap-report.html'
             }
         }
