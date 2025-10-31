@@ -1,102 +1,86 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        // Configura tu servidor SonarQube (mismo nombre que en "Manage Jenkins → Configure System")
-        SONARQUBE_SERVER = 'MySonarQube'
-        // Clave del proyecto configurada en SonarQube
-        SONAR_PROJECT_KEY = 'mi-proyecto'
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
     }
 
-    stages {
-
-        /* -------------------------- ETAPA 1: BUILD -------------------------- */
-        stage('Build') {
-            steps {
-                echo '🔧 Compilando y preparando el proyecto...'
-                // Ejemplo: si tu proyecto usa Python o Node.js
-                // sh 'pip install -r requirements.txt'
-                // sh 'npm install'
-            }
-        }
-
-        /* --------------------------- ETAPA 2: TEST --------------------------- */
-        stage('Test') {
-            steps {
-                echo '🧪 Ejecutando pruebas unitarias...'
-                // Ejemplo de pruebas (ajusta según tu lenguaje)
-                // sh 'pytest || echo "No hay pruebas unitarias definidas"'
-            }
-        }
-
-        /* -------------------------- ETAPA 3: SONARQUBE ----------------------- */
-        stage('Analyze - SonarQube') {
-            steps {
-                echo '📊 Analizando calidad de código con SonarQube...'
-                script {
-                    // Inyecta variables del servidor SonarQube configurado
-                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                        // Busca la herramienta Sonar Scanner configurada en Jenkins
-                        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-
-                        // Ejecuta el análisis de calidad de código
-                        sh """
-                            ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                                -Dsonar.sources=. \
-                                -Dsonar.language=py \
-                                -Dsonar.sourceEncoding=UTF-8
-                        """
-                    }
-                }
-            }
-        }
-
-        /* --------------------- ETAPA 4: DEPENDENCY-CHECK --------------------- */
-        stage('Security - Dependency Check') {
-            steps {
-                echo '🛡️ Ejecutando análisis de dependencias (OWASP Dependency-Check)...'
-                // Analiza dependencias y genera un reporte HTML
-                dependencyCheck additionalArguments: '--scan . --format HTML --out reports', odcInstallation: 'Default'
-                dependencyCheckPublisher pattern: 'reports/dependency-check-report.html'
-            }
-        }
-
-        /* -------------------------- ETAPA 5: OWASP ZAP ----------------------- */
-        stage('Security - OWASP ZAP') {
-            steps {
-                echo '🔍 Ejecutando escaneo dinámico de seguridad (OWASP ZAP)...'
-                // Ejecuta ZAP en Docker y genera reporte HTML
-                sh '''
-                    docker run --rm -v $(pwd):/zap/wrk owasp/zap2docker-stable \
-                    zap-baseline.py -t http://host.docker.internal:5000 -r zap-report.html || true
-                '''
-                // Publica el reporte como artefacto del build
-                archiveArtifacts artifacts: 'zap-report.html'
-            }
-        }
-
-        /* --------------------------- ETAPA 6: DEPLOY ------------------------- */
-        stage('Deploy') {
-            steps {
-                echo '🚀 Desplegando la aplicación en entorno de pruebas...'
-                // Ejemplo: levantar servicios con Docker Compose
-                // sh 'docker-compose up -d'
-            }
-        }
+    stage('Build / Install') {
+      steps {
+        echo 'Instalando dependencias y preparando entorno...'
+        sh '''
+          # crear venv para aislamiento (si no existe python3, ajustar)
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install Flask; fi
+        '''
+      }
     }
 
-    /* -------------------------- ETAPA FINAL (POST) -------------------------- */
-    post {
-        always {
-            echo '🧹 Limpieza final del pipeline...'
-            sh 'docker system prune -f || true'
-        }
-        success {
-            echo '✅ Pipeline ejecutado correctamente.'
-        }
-        failure {
-            echo '❌ Falló alguna etapa del pipeline. Revisar logs.'
-        }
+    stage('Run app (background)') {
+      steps {
+        echo 'Lanzando la app Flask en background...'
+        sh '''
+          . .venv/bin/activate
+          # ejecutar la app en background y guardar PID
+          nohup python app.py > app.log 2>&1 &
+          echo $! > app.pid
+          sleep 2
+          # mostrar las primeras líneas del log (útil para debugging rápido)
+          head -n 40 app.log || true
+        '''
+      }
     }
+
+    stage('Smoke test / Hit endpoint') {
+      steps {
+        echo 'Probando endpoint /hello (smoke test)...'
+        sh '''
+          # Probar endpoint; si corre en contenedor Jenkins en Docker, puede necesitar host.docker.internal
+          # aquí asumimos que la app está expuesta en el mismo host: http://localhost:5000
+          set +e
+          curl --max-time 5 "http://localhost:5000/hello?name=Jenkins" -s -o response.txt -w "%{http_code}"
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "curl falló (código de salida $RC)"
+            cat response.txt || true
+            exit 1
+          fi
+          HTTP_CODE=$(tail -n1 response.txt)
+          # Si curl devolvió la respuesta, response.txt contiene body; aquí validamos que contenga 'Hello'
+          if ! grep -q "Hello" response.txt; then
+            echo "Respuesta inesperada:"
+            cat response.txt
+            exit 1
+          fi
+          echo "Smoke test OK"
+        '''
+      }
+    }
+
+    stage('Cleanup') {
+      steps {
+        echo 'Deteniendo la app y limpiando...'
+        sh '''
+          if [ -f app.pid ]; then
+            kill $(cat app.pid) || true
+            rm -f app.pid
+          fi
+          # desactivar venv (no necesario en script), opcional limpiar logs
+          # rm -rf .venv
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      echo 'Fin del pipeline.'
+      sh 'ls -la || true'
+    }
+  }
 }
