@@ -1,8 +1,11 @@
 from flask import Flask, request
-import os
+
 app = Flask(__name__)
 
-@app.route('/ping', methods=['GET'])
-def ping():
-    ip = request.args.get('ip')
-    return os.popen(f"ping -c 1 {ip}").read()
+@app.route('/hello')
+def hello():
+    name = request.args.get('name')
+    return f"Hello, {name}!"
+
+if __name__ == '__main__':
+    app.run(debug=True)
