@@ -70,23 +70,29 @@ pipeline {
         */
 
         // 7. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
-        // Analiza vulnerabilidades en librerías con Dependency-Check
+        // Analiza vulnerabilidades en librerías con Dependency-Check usando Docker
         stage('Security Test - Dependency-Check (SCA)') {
             steps {
-                echo 'Analizando dependencias vulnerables...'
+                echo 'Analizando dependencias vulnerables con Docker...'
                 
-                // Usamos Dependency-Check instalado en Jenkins
-                dependencyCheck(
-                    additionalArguments: '''
-                        --scan . 
-                        --format HTML 
-                        --format JSON
-                        --project "Proyecto-Python-Vulnerable"
-                        --enableExperimental
-                        --out dependency-check-report
-                    ''', 
-                    odcInstallation: 'dependency-check'
-                )
+                script {
+                    // Usamos la imagen oficial de Dependency-Check
+                    sh '''
+                        docker run --rm \
+                        -v $(pwd):/src \
+                        -v dependency-check-data:/usr/share/dependency-check/data \
+                        owasp/dependency-check:latest \
+                        --scan /src \
+                        --format HTML \
+                        --format JSON \
+                        --format XML \
+                        --project "Proyecto-Python-Vulnerable" \
+                        --enableExperimental \
+                        --out /src/dependency-check-report
+                    '''
+                    
+                    echo '✓ Análisis de dependencias completado'
+                }
             }
             post {
                 always {
