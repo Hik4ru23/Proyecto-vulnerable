@@ -2,13 +2,18 @@ pipeline {
     // 1. CONFIGURACIÓN DEL AGENTE
     // Le decimos a Jenkins que prepare la herramienta JDK 'jenkins-java'
     // que configuraste en "Global Tool Configuration".
-    // Esto arregla el error "Couldn’t find any executable in 'null'".
     agent {
         any {
             tools {
                 jdk 'jenkins-java'
             }
         }
+    }
+
+    // ¡NUEVO! DOBLE-SEGURO PARA EL ERROR 'null'
+    // Forzamos la variable de entorno JAVA_HOME con la ruta que descubrimos.
+    environment {
+        JAVA_HOME = '/opt/java/openjdk'
     }
     
     stages {
