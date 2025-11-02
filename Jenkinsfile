@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    // ¡NUEVO! Añadimos la variable de entorno JAVA_HOME
+    // para que el plugin Dependency-Check pueda encontrar Java.
+    environment {
+        JAVA_HOME = "/opt/java/openjdk"
+    }
+
     stages {
         stage('Build') {
             steps {
@@ -9,7 +15,6 @@ pipeline {
                 sh 'apt-get install -y python3 python3-pip'
                 
                 echo 'Instalando dependencias de Python...'
-                // ¡AQUÍ ESTÁ LA CORRECCIÓN!
                 // Añadimos --break-system-packages para forzar la instalación
                 sh 'pip3 install --break-system-packages -r requirements.txt'
             }
@@ -104,3 +109,4 @@ pipeline {
         }
     }
 }
+
