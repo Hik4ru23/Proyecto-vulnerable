@@ -1,102 +1,105 @@
 pipeline {
     agent {
-        docker {
-            // Imagen base con Python y Java (para Dependency-Check)
-            image 'python:3.10-slim'
-            args '-u root' // Ejecuta como root para instalar herramientas si es necesario
+        any {
+            tools {
+                jdk 'jenkins-java'
+            }
         }
     }
 
     environment {
-        APP_NAME = 'vulnerable.py'
-        REPORTS_DIR = 'reports'
-        DEP_CHECK_VERSION = '10.0.3'
+        JAVA_HOME = '/opt/java/openjdk'
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Build') {
             steps {
-                echo '📦 Clonando repositorio...'
-                checkout scm
+                echo 'Actualizando e instalando Python...'
+                sh 'apt-get update'
+                sh 'apt-get install -y python3 python3-pip'
+                
+                echo 'Instalando dependencias de Python...'
+                sh 'pip3 install --break-system-packages -r requirements.txt'
             }
         }
 
-        stage('Setup Environment') {
+        stage('Test') {
             steps {
-                echo '⚙️ Instalando dependencias del sistema...'
-                sh '''
-                    apt-get update -y
-                    apt-get install -y openjdk-17-jdk curl unzip
-                    ln -s /usr/bin/python3 /usr/bin/python || true
-                '''
-                echo '📦 Instalando dependencias del proyecto...'
-                sh 'pip install --no-cache-dir -r requirements.txt || true'
+                echo 'Running Unit Tests... (Omitido por ahora)'
             }
         }
 
-        stage('Static Analysis - Dependency Check (SCA)') {
+        stage('Analyze - SonarQube (SAST)') {
             steps {
-                echo '🔍 Ejecutando OWASP Dependency-Check...'
-                sh '''
-                    mkdir -p /opt/dependency-check ${REPORTS_DIR}
-                    cd /opt/dependency-check
-                    curl -L -o dependency-check.zip https://github.com/jeremylong/DependencyCheck/releases/download/v${DEP_CHECK_VERSION}/dependency-check-${DEP_CHECK_VERSION}-release.zip
-                    unzip -o dependency-check.zip
-                    chmod +x dependency-check/bin/dependency-check.sh
-                    dependency-check/bin/dependency-check.sh \
-                        --project "Proyecto Vulnerable" \
-                        --scan /var/jenkins_home/workspace/Pipeline \
-                        --format "HTML" \
-                        --out /var/jenkins_home/workspace/Pipeline/${REPORTS_DIR} \
-                        --enableExperimental
-                '''
-            }
-            post {
-                always {
-                    echo '📁 Archivando reporte de Dependency-Check...'
-                    archiveArtifacts artifacts: '**/reports/*.html', allowEmptyArchive: true
+                script {
+                    def scannerHome = tool 'SonarScanner-Default'
+                    withSonarQubeEnv('MiSonarQubeServer') {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                            -Dsonar.projectName=Proyecto-Python-Vulnerable \
+                            -Dsonar.projectKey=py-vulnerable \
+                            -Dsonar.sources=.
+                        """
+                    }
                 }
             }
         }
 
-        stage('Run App') {
+        stage('Security Test (Static) - Dependency-Check (SCA)') {
             steps {
-                echo '🚀 Iniciando la aplicación Flask...'
-                sh '''
-                    nohup python ${APP_NAME} &
-                    sleep 5
-                    echo "✅ Aplicación iniciada en http://localhost:5000"
-                '''
+                echo 'Checking for vulnerable dependencies...'
+                dependencyCheck additionalArguments: '''
+                    --scan . 
+                    --format "HTML" 
+                    --project "Proyecto-Python-Vulnerable"
+                    --enableExperimental
+                ''', odcInstallation: 'DC-Default'
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'dependency-check-report.html'
+                }
             }
         }
 
-        stage('Dynamic Analysis - OWASP ZAP (DAST)') {
+        stage('Deploy (to Test Environment)') {
             steps {
-                echo '🕷️ Ejecutando OWASP ZAP Baseline Scan...'
+                echo 'Deploying app to test environment...'
+                // Ejecuta vulnerable.py en lugar de app.py
+                sh 'nohup python3 vulnerable.py &'
+                sleep 15
+                echo 'App is running in the background.'
+            }
+        }
+
+        stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
+            steps {
+                echo 'Running dynamic scan with OWASP ZAP...'
+                sh 'curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py'
+                sh 'chmod +x zap-baseline.py'
                 sh '''
-                    curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py
-                    chmod +x zap-baseline.py
                     ./zap-baseline.py \
-                        -t http://localhost:5000/hello?name=test \
-                        -p 8090 \
-                        -J zap-baseline-report.json
+                    -t http://jenkins-lts:5000/hello?name=test \
+                    -H zap \
+                    -p 8090 \
+                    -J zap-baseline-report.json
                 '''
             }
             post {
                 always {
-                    echo '📁 Archivando reporte de ZAP...'
-                    archiveArtifacts artifacts: 'zap-baseline-report.json', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'zap-baseline-report.json'
                 }
             }
         }
     }
 
-    post {
+    post { 
         always {
-            echo '🧹 Limpiando procesos...'
-            sh 'pkill -f "python vulnerable.py" || true'
-            echo '✅ Pipeline finalizado correctamente.'
+            echo 'Pipeline finished. Cleaning up...'
+            // Mata vulnerable.py si quedó corriendo
+            sh 'pkill -f "python3 vulnerable.py" || true'
+            echo 'Cleanup complete.'
         }
     }
 }
