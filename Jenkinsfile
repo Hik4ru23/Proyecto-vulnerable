@@ -5,13 +5,13 @@ pipeline {
         stage('Build') {
             steps {
                 echo 'Actualizando e instalando Python...'
-                // ¡NUEVO! Le damos permisos de administrador para instalar
                 sh 'apt-get update'
                 sh 'apt-get install -y python3 python3-pip'
                 
                 echo 'Instalando dependencias de Python...'
-                // ¡CAMBIADO! Usamos pip3 en lugar de pip
-                sh 'pip3 install -r requirements.txt'
+                // ¡AQUÍ ESTÁ LA CORRECCIÓN!
+                // Añadimos --break-system-packages para forzar la instalación
+                sh 'pip3 install --break-system-packages -r requirements.txt'
             }
         }
 
@@ -64,7 +64,6 @@ pipeline {
         stage('Deploy (to Test Environment)') {
             steps {
                 echo 'Deploying app to test environment...'
-                // ¡CAMBIADO! Usamos python3 para ejecutar la app
                 sh 'nohup python3 app.py &'
                 sleep 15 
                 echo 'App is running in the background.'
@@ -97,7 +96,6 @@ pipeline {
     post { 
         always {
             echo 'Pipeline finished. Cleaning up...'
-            // ¡CAMBIADO! Matamos el proceso de python3
             sh 'pkill -f "python3 app.py" || true'
             echo 'Cleanup complete.'
         }
