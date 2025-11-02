@@ -1,4 +1,4 @@
-pipeline {
+hikaru {
     // 1. CONFIGURACIÓN DEL AGENTE
     // Le decimos a Jenkins que prepare la herramienta JDK 'jenkins-java'
     // que configuraste en "Global Tool Configuration".
