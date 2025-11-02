@@ -1,12 +1,17 @@
 pipeline {
-    // ¡SIN BLOQUE 'tools' AQUÍ! Empezamos directo.
     agent any
 
     stages {
         stage('Build') {
             steps {
+                echo 'Actualizando e instalando Python...'
+                // ¡NUEVO! Le damos permisos de administrador para instalar
+                sh 'apt-get update'
+                sh 'apt-get install -y python3 python3-pip'
+                
                 echo 'Instalando dependencias de Python...'
-                sh 'pip install -r requirements.txt'
+                // ¡CAMBIADO! Usamos pip3 en lugar de pip
+                sh 'pip3 install -r requirements.txt'
             }
         }
 
@@ -18,15 +23,9 @@ pipeline {
 
         stage('Analyze - SonarQube (SAST)') {
             steps {
-                // Tuvimos que agregar 'script' para poder
-                // obtener la ruta del scanner.
                 script {
-                    // 1. Pedirle a Jenkins la ruta del scanner 'SonarScanner-Default'
                     def scannerHome = tool 'SonarScanner-Default' 
-                    
-                    // 2. Usar la configuración del servidor y ejecutar el scanner
                     withSonarQubeEnv('MiSonarQubeServer') { 
-                        // 3. Usamos la ruta completa al scanner
                         sh "${scannerHome}/bin/sonar-scanner \
                             -Dsonar.projectName=Proyecto-Python-Vulnerable \
                             -Dsonar.projectKey=py-vulnerable \
@@ -48,8 +47,6 @@ pipeline {
         stage('Security Test (Static) - Dependency-Check (SCA)') {
             steps {
                 echo 'Checking for vulnerable dependencies...'
-                // Este paso no necesita el bloque 'tools' porque
-                // 'odcInstallation' ya busca la herramienta 'DC-Default'
                 dependencyCheck additionalArguments: '''
                     --scan . 
                     --format "HTML" 
@@ -67,7 +64,8 @@ pipeline {
         stage('Deploy (to Test Environment)') {
             steps {
                 echo 'Deploying app to test environment...'
-                sh 'nohup python app.py &'
+                // ¡CAMBIADO! Usamos python3 para ejecutar la app
+                sh 'nohup python3 app.py &'
                 sleep 15 
                 echo 'App is running in the background.'
             }
@@ -99,7 +97,8 @@ pipeline {
     post { 
         always {
             echo 'Pipeline finished. Cleaning up...'
-            sh 'pkill -f "python app.py" || true'
+            // ¡CAMBIADO! Matamos el proceso de python3
+            sh 'pkill -f "python3 app.py" || true'
             echo 'Cleanup complete.'
         }
     }
