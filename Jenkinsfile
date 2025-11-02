@@ -1,6 +1,6 @@
 pipeline {
     // ¡CAMBIO! Le decimos al agente que prepare la herramienta JDK
-    // que configuramos en la interfaz de Jenkins (Paso 1).
+    // que configuramos en la interfaz de Jenkins.
     agent {
         any {
             tools {
@@ -9,8 +9,6 @@ pipeline {
         }
     }
     
-    // El bloque 'environment' que estaba aquí se ha eliminado.
-
     stages {
         stage('Build') {
             steps {
@@ -118,4 +116,3 @@ pipeline {
         }
     }
 }
-
