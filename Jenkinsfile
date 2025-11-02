@@ -1,11 +1,15 @@
 pipeline {
-    agent any
-
-    // ¡NUEVO! Añadimos la variable de entorno JAVA_HOME
-    // para que el plugin Dependency-Check pueda encontrar Java.
-    environment {
-        JAVA_HOME = "/opt/java/openjdk"
+    // ¡CAMBIO! Le decimos al agente que prepare la herramienta JDK
+    // que configuramos en la interfaz de Jenkins (Paso 1).
+    agent {
+        any {
+            tools {
+                jdk 'jenkins-java'
+            }
+        }
     }
+    
+    // El bloque 'environment' que estaba aquí se ha eliminado.
 
     stages {
         stage('Build') {
@@ -29,8 +33,12 @@ pipeline {
         stage('Analyze - SonarQube (SAST)') {
             steps {
                 script {
+                    // 1. Pedirle a Jenkins la ruta del scanner 'SonarScanner-Default'
                     def scannerHome = tool 'SonarScanner-Default' 
+                    
+                    // 2. Usar la configuración del servidor y ejecutar el scanner
                     withSonarQubeEnv('MiSonarQubeServer') { 
+                        // 3. Usamos la ruta completa al scanner
                         sh "${scannerHome}/bin/sonar-scanner \
                             -Dsonar.projectName=Proyecto-Python-Vulnerable \
                             -Dsonar.projectKey=py-vulnerable \
@@ -55,6 +63,7 @@ pipeline {
         stage('Security Test (Static) - Dependency-Check (SCA)') {
             steps {
                 echo 'Checking for vulnerable dependencies...'
+                // Este comando usará el JDK 'jenkins-java' que definimos arriba
                 dependencyCheck additionalArguments: '''
                     --scan . 
                     --format "HTML" 
@@ -82,7 +91,7 @@ pipeline {
             steps {
                 echo 'Running dynamic scan with OWASP ZAP...'
                 
-                sh 'curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py'
+                sh 'curl -O https://raw.githubusercontent/zaproxy/zaproxy/main/docker/zap-baseline.py'
                 sh 'chmod +x zap-baseline.py'
                 
                 sh '''
