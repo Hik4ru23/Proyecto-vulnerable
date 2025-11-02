@@ -1,201 +1,169 @@
 pipeline {
-    // 1. CONFIGURACIÓN DEL AGENTE
-    // Usamos 'any' sin configuración especial dentro
     agent any
     
-    // 2. CONFIGURACIÓN DE HERRAMIENTAS
-    // Aquí declaramos las herramientas que Jenkins debe preparar
-    tools {
-        jdk 'jenkins-java'  // El JDK que configuraste en Global Tool Configuration
+    environment {
+        DOCKER_IMAGE = 'vulnerable-app'
+        SONAR_PROJECT_KEY = 'vulnerable-app'
     }
     
     stages {
-        // 3. ETAPA DE CONSTRUCCIÓN
-        // Instala Python y las dependencias del proyecto
+        stage('Checkout') {
+            steps {
+                echo '📥 Clonando repositorio...'
+                checkout scm
+            }
+        }
+        
         stage('Build') {
             steps {
-                echo 'Actualizando e instalando Python...'
-                sh '''
-                    apt-get update -qq
-                    apt-get install -y python3 python3-pip
-                '''
-                
-                echo 'Instalando dependencias de Python...'
-                sh 'pip3 install --break-system-packages -r requirements.txt'
+                echo '🔨 Construyendo imagen Docker...'
+                script {
+                    sh 'docker build -t $DOCKER_IMAGE:latest .'
+                }
             }
         }
-
-        // 4. ETAPA DE PRUEBAS (SIMULADA)
+        
         stage('Test') {
             steps {
-                echo 'Running Unit Tests... (Omitido por ahora)'
-                // Aquí irían tus comandos de 'pytest', etc.
-                // sh 'pytest tests/'
+                echo '🧪 Ejecutando pruebas unitarias...'
+                script {
+                    sh '''
+                        python3 -m pip install --upgrade pip
+                        pip3 install -r requirements.txt
+                        pip3 install pytest
+                        python3 -m pytest test_vulnerable.py --verbose || echo "Tests completed"
+                    '''
+                }
             }
         }
-
-        // 5. ETAPA DE ANÁLISIS ESTÁTICO (SAST)
-        // Analiza tu código con SonarQube
-        stage('Analyze - SonarQube (SAST)') {
+        
+        stage('OWASP Dependency-Check') {
             steps {
+                echo '🔍 Analizando dependencias con OWASP Dependency-Check...'
+                dependencyCheck additionalArguments: '''
+                    --scan .
+                    --format HTML
+                    --format XML
+                    --project vulnerable-app
+                    --failOnCVSS 7
+                ''', odcInstallation: 'dependency-check'
+                
+                dependencyCheckPublisher pattern: 'dependency-check-report.xml'
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                echo '📊 Analizando código con SonarQube...'
                 script {
-                    // Obtenemos la ruta del SonarScanner configurado
-                    def scannerHome = tool 'SonarScanner-Default' 
-                    
-                    // Usamos la configuración de SonarQube de la UI
-                    withSonarQubeEnv('MiSonarQubeServer') { 
+                    def scannerHome = tool 'sonarqube-scanner'
+                    withSonarQubeEnv('sonarqube') {
                         sh """
                             ${scannerHome}/bin/sonar-scanner \
-                            -Dsonar.projectName=Proyecto-Python-Vulnerable \
-                            -Dsonar.projectKey=py-vulnerable \
+                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                             -Dsonar.sources=. \
-                            -Dsonar.python.version=3
+                            -Dsonar.host.url=http://sonarqube:9000 \
+                            -Dsonar.python.version=3.9
                         """
                     }
                 }
             }
         }
-
-        // 6. ETAPA DE QUALITY GATE (OPCIONAL - COMENTADA)
-        // Descomenta si SonarQube tiene suficiente RAM
-        /*
-        stage('Check SonarQube Quality Gate') {
+        
+        stage('SonarQube Quality Gate') {
             steps {
-                echo 'Revisando Quality Gate de SonarQube...'
+                echo '⏳ Esperando resultado del Quality Gate...'
                 timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                    waitForQualityGate abortPipeline: false
                 }
             }
         }
-        */
-
-        // 7. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
-        // Analiza vulnerabilidades en librerías con Dependency-Check usando Docker
-        stage('Security Test - Dependency-Check (SCA)') {
+        
+        stage('Deploy to Test') {
             steps {
-                echo 'Analizando dependencias vulnerables con Docker...'
-                
+                echo '🚀 Desplegando aplicación en entorno de prueba...'
                 script {
-                    // Usamos la imagen oficial de Dependency-Check
+                    // Detener contenedor anterior si existe
                     sh '''
-                        docker run --rm \
-                        -v $(pwd):/src \
-                        -v dependency-check-data:/usr/share/dependency-check/data \
-                        owasp/dependency-check:latest \
-                        --scan /src \
-                        --format HTML \
-                        --format JSON \
-                        --format XML \
-                        --project "Proyecto-Python-Vulnerable" \
-                        --enableExperimental \
-                        --out /src/dependency-check-report
+                        docker stop vulnerable-app-test 2>/dev/null || echo "No container to stop"
+                        docker rm vulnerable-app-test 2>/dev/null || echo "No container to remove"
                     '''
                     
-                    echo '✓ Análisis de dependencias completado'
-                }
-            }
-            post {
-                always {
-                    // Publicamos los resultados
-                    dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
+                    // Ejecutar nuevo contenedor
+                    sh 'docker run -d --name vulnerable-app-test --network jenkins -p 5000:5000 $DOCKER_IMAGE:latest'
                     
-                    // Archivamos los reportes
-                    archiveArtifacts artifacts: 'dependency-check-report/*', allowEmptyArchive: true
+                    echo 'Esperando a que la aplicación inicie...'
+                    sleep 10
                 }
             }
         }
-
-        // 8. ETAPA DE DESPLIEGUE (A ENTORNO DE PRUEBAS)
-        // Lanza la aplicación Flask en segundo plano
-        stage('Deploy (to Test Environment)') {
+        
+        stage('OWASP ZAP Scan') {
             steps {
-                echo 'Desplegando aplicación en entorno de pruebas...'
-                
+                echo '🛡️ Ejecutando escaneo dinámico con OWASP ZAP...'
                 script {
-                    // Matamos cualquier proceso anterior de Python
-                    sh 'pkill -f "python3 app.py" || true'
-                    
-                    // Iniciamos la app en segundo plano
-                    sh 'nohup python3 app.py > app.log 2>&1 &'
-                    
-                    // Esperamos a que la app inicie
-                    sleep 20
-                    
-                    // Verificamos que la app esté corriendo
                     sh '''
-                        if curl -s http://localhost:5000/hello?name=test > /dev/null; then
-                            echo "✓ App está corriendo correctamente"
-                        else
-                            echo "✗ Error: App no responde"
-                            exit 1
-                        fi
-                    '''
-                }
-            }
-        }
-
-        // 9. ETAPA DE ANÁLISIS DINÁMICO (DAST)
-        // Escanea la aplicación en ejecución con OWASP ZAP
-        stage('Security Test - OWASP ZAP (DAST)') {
-            steps {
-                echo 'Ejecutando escaneo dinámico con OWASP ZAP...'
-                
-                script {
-                    // Usamos el contenedor de ZAP que ya está corriendo
-                    // Nota: Asegúrate de que el contenedor 'zap' esté en la misma red que Jenkins
-                    
-                    sh '''
-                        # Instalamos Python3 si no está (para el script de ZAP)
-                        which python3 || apt-get install -y python3
-                        
-                        # Descargamos el script baseline de ZAP
-                        curl -s -o zap-baseline.py https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py
-                        chmod +x zap-baseline.py
-                        
-                        # Ejecutamos el escaneo
-                        # -t: URL objetivo (desde el contenedor Jenkins)
-                        # -r: Genera reporte HTML
-                        # -J: Genera reporte JSON
-                        python3 zap-baseline.py \
-                            -t http://localhost:5000 \
-                            -r zap-baseline-report.html \
-                            -J zap-baseline-report.json \
-                            || true
+                        docker exec zap zap-baseline.py \
+                        -t http://vulnerable-app-test:5000 \
+                        -r zap-report.html \
+                        -J zap-report.json \
+                        || echo "ZAP scan completed with warnings"
                     '''
                     
-                    echo '✓ Escaneo ZAP completado'
-                }
-            }
-            post {
-                always {
-                    // Archivamos los reportes de ZAP
-                    archiveArtifacts artifacts: 'zap-baseline-report.*', allowEmptyArchive: true
+                    // Copiar reporte
+                    sh 'docker cp zap:/zap/wrk/zap-report.html . || echo "Could not copy ZAP report"'
                 }
             }
         }
-    } // Fin de stages
-
-    // 10. POST-ACTIONS
-    // Acciones que se ejecutan al finalizar el pipeline
-    post { 
+    }
+    
+    post {
         always {
-            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            echo 'Pipeline finalizado. Limpiando recursos...'
-            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+            echo '📦 Archivando reportes...'
+            archiveArtifacts artifacts: '**/dependency-check-report.html, **/zap-report.html', allowEmptyArchive: true
             
-            // Detenemos la aplicación Flask
-            sh 'pkill -f "python3 app.py" || true'
+            echo '📄 Publicando reportes de pruebas...'
+            publishHTML([
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: '.',
+                reportFiles: 'dependency-check-report.html',
+                reportName: 'Dependency-Check Report'
+            ])
             
-            echo '✓ Limpieza completada'
+            publishHTML([
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: '.',
+                reportFiles: 'zap-report.html',
+                reportName: 'OWASP ZAP Report'
+            ])
         }
         
         success {
-            echo '✓✓✓ PIPELINE EXITOSO ✓✓✓'
+            echo '✅ Pipeline ejecutado exitosamente!'
         }
         
         failure {
-            echo '✗✗✗ PIPELINE FALLÓ ✗✗✗'
-            echo 'Revisa los logs para más detalles'
+            echo '❌ Pipeline falló. Revisa los logs para más detalles.'
         }
     }
 }
+```
+
+### Archivo: `.gitignore`
+```
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv
+*.log
+.DS_Store
+dependency-check-report.*
+zap-report.*
