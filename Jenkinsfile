@@ -30,13 +30,14 @@ pipeline {
 
                         chmod +x dependency-check/bin/dependency-check.sh
 
-                        echo "🚀 Ejecutando análisis con API Key..."
+                        echo "🚀 Ejecutando análisis con API Key y delay..."
                         ./dependency-check/bin/dependency-check.sh \
                             --project "Proyecto-Vulnerable" \
                             --scan . \
                             --format "HTML" \
                             --out dependency-check-report.html \
-                            --nvdApiKey "$NVD_API_KEY"
+                            --nvdApiKey "$NVD_API_KEY" \
+                            --nvdApiDelay 2000
                     '''
                 }
             }
