@@ -41,25 +41,31 @@ pipeline {
 
         // 4. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
         stage('Security Test (Static) - Dependency-Check (SCA)') {
+            // Se inyecta la NVD API Key de Jenkins Credentials
+            environment {
+                NVD_API_KEY = credentials('NVD_API_KEY')
+            }
             steps {
                 echo 'Descargando y ejecutando Dependency-Check 9.2.0...'
                 sh '''
-                    # Descarga y extrae la última versión
+                    # Descargar y extraer la última versión estable
                     wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
                     unzip -o dependency-check-9.2.0-release.zip
 
-                    # Ejecuta el escaneo con actualización automática (solo la primera vez)
+                    # Ejecutar el análisis con actualización de base CVE
                     ./dependency-check/bin/dependency-check.sh \
                         --scan . \
                         --format HTML \
                         --project "Proyecto-Python-Vulnerable" \
                         --out dependency-check-report \
                         --data /var/jenkins_home/dependency-check-data \
+                        --nvdApiKey "$NVD_API_KEY" \
                         --enableExperimental
                 '''
             }
             post {
                 always {
+                    echo 'Archivando reporte de Dependency-Check...'
                     archiveArtifacts artifacts: 'dependency-check-report/**', fingerprint: true
                 }
             }
@@ -68,17 +74,17 @@ pipeline {
         // 5. ETAPA DE DESPLIEGUE (A PRUEBAS)
         stage('Deploy (to Test Environment)') {
             steps {
-                echo 'Deploying app to test environment...'
+                echo 'Desplegando aplicación Python en entorno de pruebas...'
                 sh 'nohup python3 vulnerable.py &'
                 sleep 15
-                echo 'App is running in the background.'
+                echo 'Aplicación en ejecución en segundo plano.'
             }
         }
 
         // 6. ETAPA DE ANÁLISIS DINÁMICO (DAST)
         stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
             steps {
-                echo 'Running dynamic scan with OWASP ZAP...'
+                echo 'Ejecutando escaneo dinámico con OWASP ZAP...'
                 sh 'curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py'
                 sh 'chmod +x zap-baseline.py'
 
@@ -92,18 +98,19 @@ pipeline {
             }
             post {
                 always {
+                    echo 'Archivando reporte OWASP ZAP...'
                     archiveArtifacts artifacts: 'zap-baseline-report.json', fingerprint: true
                 }
             }
         }
     }
 
-    // 7. ETAPA DE LIMPIEZA
+    // 7. ETAPA DE LIMPIEZA FINAL
     post {
         always {
-            echo 'Pipeline finished. Cleaning up...'
+            echo 'Pipeline finalizado. Limpiando entorno...'
             sh 'pkill -f "python3 vulnerable.py" || true'
-            echo 'Cleanup complete.'
+            echo 'Limpieza completa ✅'
         }
     }
 }
