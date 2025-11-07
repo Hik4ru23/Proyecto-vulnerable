@@ -1,74 +1,85 @@
 pipeline {
-    // 1. CONFIGURACIÓN DEL AGENTE
-    // Prepara la herramienta JDK 'jenkins-java' que configuraste en la UI.
-    agent {
-        any {
-            tools {
-                jdk 'jenkins-java'
-            }
-        }
+    agent any
+
+    environment {
+        // Credencial tipo "Secret text" o "Username/Password" si la guardas así en Jenkins
+        NVD_API_KEY = credentials('NVD_API_KEY')
+        DC_DATA_DIR = "${env.WORKSPACE}/dependency-check-data" // Persistencia local dentro del workspace (puedes cambiar)
+    }
+
+    options {
+        // Timeouts razonables para evitar builds eternos
+        timeout(time: 40, unit: 'MINUTES')
+        // Mantener solo artefactos recientes
     }
 
     stages {
-
-        // 2. ETAPA DE CONSTRUCCIÓN
-        // Instala Python, pip, unzip, curl y python3-yaml (para ZAP)
-        stage('Build') {
+        stage('Checkout') {
             steps {
-                echo '📦 Actualizando e instalando Python y herramientas...'
-                sh 'apt-get update'
-                sh 'apt-get install -y python3 python3-pip unzip curl python3-yaml'
-                
-                echo '🐍 Instalando dependencias de Python...'
-                sh 'pip3 install --break-system-packages -r requirements.txt'
+                echo '📦 Descargando código...'
+                git branch: 'main', url: 'https://github.com/Hik4ru23/Proyecto-vulnerable.git'
             }
         }
 
-        // 3. ETAPA DE ANÁLISIS ESTÁTICO (SAST)
-        // Analiza tu código con SonarQube
-        stage('Analyze - SonarQube (SAST)') {
+        stage('Dependency Check - Static') {
             steps {
+                echo '🔍 Ejecutando OWASP Dependency-Check (contenedor)...'
                 script {
-                    def scannerHome = tool 'SonarScanner-Default' 
-                    withSonarQubeEnv('MiSonarQubeServer') { 
-                        sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectName=Proyecto-Python-Vulnerable -Dsonar.projectKey=py-vulnerable -Dsonar.sources=."
-                    }
+                    // Asegurarse de tener el directorio para la DB
+                    sh """
+                        set -e
+                        mkdir -p "${DC_DATA_DIR}"
+                        # permiso seguro
+                        chmod 700 "${DC_DATA_DIR}" || true
+                    """
+
+                    // Ejecutar dependency-check en docker para evitar problemas de binarios locales
+                    sh """
+                        set -e
+                        docker run --rm \\
+                          -v "${env.WORKSPACE}":/src \\
+                          -v "${DC_DATA_DIR}":/usr/share/dependency-check/data \\
+                          -e "NVD_API_KEY=${NVD_API_KEY}" \\
+                          owasp/dependency-check:9.2.0 \\
+                          --project "Proyecto-Vulnerable" \\
+                          --scan /src \\
+                          --format HTML \\
+                          --out /src/dependency-check-report.html \\
+                          --nvdApiKey "${NVD_API_KEY}" \\
+                          --nvdApiDelay 4000 || true
+                    """
                 }
             }
-        }
-
-        // 4. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
-        // ¡CAMBIO! Se eliminó 'set -e' para permitir que '|| echo' funcione.
-        stage('Dependency Check') {
-            steps {
-                echo '🔍 Instalando y ejecutando Dependency-Check...'
-                sh '''
-                    echo "➡️ Descargando Dependency-Check..."
-                    if [ ! -f dependency-check-9.2.0-release.zip ]; then
-                        wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
-                    fi
-
-                    echo "➡️ Descomprimiendo sin pedir confirmación..."
-                    unzip -o -q dependency-check-9.2.0-release.zip
-                    chmod +x dependency-check/bin/dependency-check.sh
-
-                    echo "🚀 Ejecutando análisis..."
-                    # Esto fallará con un error 403 (lo cual es esperado).
-                    # El '|| echo' al final ignorará el error y permitirá que el pipeline continúe.
-                    ./dependency-check/bin/dependency-check.sh \
-                        --project "Proyecto-Vulnerable" \
-                        --scan . \
-                        --format HTML \
-                        --out dependency-check-report.html \
-                        --nvdApiDelay 4000 || echo "⚠️ Advertencia: Dependency-Check falló (probablemente error 403 de NVD), continuando pipeline..."
-                '''
-            }
             post {
+                success {
+                    echo '✅ Dependency-Check completado (success).'
+                }
+                unstable {
+                    echo '⚠️ Dependency-Check terminó con advertencias/unstable.'
+                }
+                failure {
+                    echo '❌ Dependency-Check falló. Se intentará regenerar DB y reintentar...'
+                    // Intento de recuperación: eliminar DB corrupta y reintentar (one-shot)
+                    sh """
+                        set -e || true
+                        echo "🔁 Eliminando DB local de dependency-check para regenerar..."
+                        rm -rf "${DC_DATA_DIR}" || true
+                        mkdir -p "${DC_DATA_DIR}"
+                        docker run --rm \\
+                          -v "${env.WORKSPACE}":/src \\
+                          -v "${DC_DATA_DIR}":/usr/share/dependency-check/data \\
+                          -e "NVD_API_KEY=${NVD_API_KEY}" \\
+                          owasp/dependency-check:9.2.0 \\
+                          --project "Proyecto-Vulnerable" \\
+                          --scan /src \\
+                          --format HTML \\
+                          --out /src/dependency-check-report.html \\
+                          --nvdApiKey "${NVD_API_KEY}" \\
+                          --nvdApiDelay 4000 || true
+                    """
+                }
                 always {
-                    echo '✅ Dependency-Check (etapa) finalizada.'
                     archiveArtifacts artifacts: 'dependency-check-report.html', allowEmptyArchive: true
-
-                    // 📊 Mostrar el reporte HTML en Jenkins (requiere plugin 'HTML Publisher')
                     publishHTML(target: [
                         allowMissing: true,
                         keepAll: true,
@@ -76,50 +87,70 @@ pipeline {
                         reportFiles: 'dependency-check-report.html',
                         reportName: '🔒 Dependency-Check Report'
                     ])
-                    
-                    echo '🧹 Limpiando workspace de DC...'
-                    sh 'rm -rf dependency-check dependency-check-9.2.0-release.zip'
                 }
             }
         }
 
-        // 5. ETAPA DE DESPLIEGUE (A PRUEBAS)
-        stage('Deploy (to Test Environment)') {
+        stage('Start Target App (for DAST)') {
             steps {
-                echo '🚀 Desplegando app en segundo plano...'
-                sh 'nohup python3 vulnerable.py &' 
-                sleep 20 // 20 segundos para asegurar que la app inicie
-                echo '✅ App iniciada en http://jenkins-lts:5000'
+                echo '🚀 Iniciando app vulnerable (si aplica) para escaneo...'
+                // Si tu app se inicia con python vulnerable.py, levantamos en background dentro del workspace
+                sh '''
+                    # intenta iniciar la app si existe; si no, lo ignoramos
+                    if [ -f vulnerable.py ]; then
+                        nohup python3 vulnerable.py > vulnerable.log 2>&1 & echo $! > vulnerable.pid || true
+                        sleep 2
+                        echo "✅ App vulnerable iniciada (si existía)."
+                    else
+                        echo "ℹ️ vulnerable.py no encontrado — omitiendo levantado del target."
+                    fi
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'vulnerable.log', allowEmptyArchive: true
+                }
             }
         }
 
-        // 6. ETAPA DE ANÁLISIS DINÁMICO (DAST)
-        // Se ejecuta con 'python3' (que ahora tiene 'yaml')
         stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
             steps {
-                echo '🧨 Ejecutando análisis dinámico con OWASP ZAP...'
-                sh '''
-                    if [ ! -f zap-baseline.py ]; then
-                        echo "⬇️ Descargando OWASP ZAP baseline..."
-                        curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py
-                        chmod +x zap-baseline.py
-                    fi
+                echo '🧨 Ejecutando análisis dinámico con OWASP ZAP (contenedor)...'
+                script {
+                    // URL objetivo: si corres la app en el mismo jenkins, ajusta host/puerto a donde responde la app
+                    def targetUrl = "http://localhost:5000/hello?name=test"
 
-                    echo "🚀 Iniciando análisis con OWASP ZAP..."
-                    # Esto ahora funcionará gracias a 'python3-yaml'
-                    python3 ./zap-baseline.py \
-                        -t http://jenkins-lts:5000/hello?name=test \
-                        -H zap \
-                        -p 8090 \
-                        -r zap-report.html || echo "⚠️ OWASP ZAP finalizó con advertencias, pero continuamos."
-                '''
+                    // Bajamos zap-baseline.py si no existe
+                    sh '''
+                        set -e
+                        if [ ! -f zap-baseline.py ]; then
+                            echo "⬇️ Descargando zap-baseline.py..."
+                            curl -sSf -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py
+                            chmod +x zap-baseline.py
+                        fi
+                    '''
+
+                    // Ejecutar ZAP en un contenedor en modo daemon y ejecutar zap-baseline.py apuntando al demonio
+                    sh """
+                        set -e
+                        ZAP_CONTAINER_NAME=jenkins-zap-\$(date +%s)
+                        docker run -u zap --name "\$ZAP_CONTAINER_NAME" -d -p 8090:8090 -p 8080:8080 owasp/zap2docker-stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+                        echo "🟢 Esperando que ZAP inicie..."
+                        sleep 8
+
+                        # Ejecutar el script baseline desde host, apuntando al daemon
+                        python3 zap-baseline.py -t "${targetUrl}" -r zap-report.html -z "-config api.key= -daemon" -p 8090 || echo "⚠️ OWASP ZAP finalizó con advertencias."
+
+                        # Copiar report (ya queda en workspace si se ejecutó desde aquí)
+                        docker stop \$ZAP_CONTAINER_NAME || true
+                        docker rm \$ZAP_CONTAINER_NAME || true
+                    """
+                }
             }
             post {
                 always {
                     echo '📑 Archivando reporte de OWASP ZAP...'
                     archiveArtifacts artifacts: 'zap-report.html', allowEmptyArchive: true
-
-                    // 📊 Publicar el reporte HTML en Jenkins (requiere plugin 'HTML Publisher')
                     publishHTML(target: [
                         allowMissing: true,
                         keepAll: true,
@@ -130,15 +161,32 @@ pipeline {
                 }
             }
         }
-    } // Fin de 'stages'
+    }
 
-    // 7. ETAPA DE LIMPIEZA
-    post { 
+    post {
         always {
-            echo '🧽 Pipeline finalizado. Limpiando entorno...'
-            // Detiene el servidor de Python
-            sh 'pkill -f "python3 vulnerable.py" || true'
-            echo 'Cleanup complete.'
+            echo '🧽 Pipeline finalizado. Limpieza final...'
+            // matar procesos locales si se levantó la app
+            sh '''
+                set -e || true
+                if [ -f vulnerable.pid ]; then
+                    PID=$(cat vulnerable.pid || echo "")
+                    if [ -n "$PID" ]; then
+                        kill $PID || true
+                        rm -f vulnerable.pid
+                    fi
+                fi
+                # borrar contenedores huérfanos de ZAP por si acaso
+                docker ps -a --filter "name=jenkins-zap-" --format '{{.ID}}' | xargs -r docker rm -f || true
+                # Limpiar artefactos temporales
+                rm -rf dependency-check dependency-check-9.2.0-release.zip || true
+            '''
+        }
+        success {
+            echo '✅ Pipeline completado correctamente.'
+        }
+        failure {
+            echo '❌ Pipeline finalizó con errores.'
         }
     }
 }
