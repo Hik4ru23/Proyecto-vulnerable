@@ -1,4 +1,5 @@
 pipeline {
+    // 1. CONFIGURACIÓN DEL AGENTE
     agent {
         any {
             tools {
@@ -9,17 +10,19 @@ pipeline {
 
     stages {
 
+        // 2. ETAPA DE CONSTRUCCIÓN
         stage('Build') {
             steps {
                 echo 'Actualizando e instalando Python...'
                 sh 'apt-get update'
-                sh 'apt-get install -y python3 python3-pip unzip wget'
+                sh 'apt-get install -y python3 python3-pip'
 
                 echo 'Instalando dependencias de Python...'
                 sh 'pip3 install --break-system-packages -r requirements.txt'
             }
         }
 
+        // 3. ETAPA DE ANÁLISIS ESTÁTICO (SAST)
         stage('Analyze - SonarQube (SAST)') {
             steps {
                 script {
@@ -36,27 +39,23 @@ pipeline {
             }
         }
 
-        // 🔹 Actualización y ejecución manual de Dependency-Check 9.2.0
+        // 4. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
         stage('Security Test (Static) - Dependency-Check (SCA)') {
             steps {
                 echo 'Descargando y ejecutando Dependency-Check 9.2.0...'
-
                 sh '''
-                    # Descargar y descomprimir la versión más reciente
-                    wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip -O dependency-check.zip
-                    unzip -o dependency-check.zip
+                    # Descarga y extrae la última versión
+                    wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
+                    unzip -o dependency-check-9.2.0-release.zip
 
-                    # Verificar versión
-                    ./dependency-check/bin/dependency-check.sh --version
-
-                    # Ejecutar análisis
+                    # Ejecuta el escaneo con actualización automática (solo la primera vez)
                     ./dependency-check/bin/dependency-check.sh \
                         --scan . \
                         --format HTML \
                         --project "Proyecto-Python-Vulnerable" \
                         --out dependency-check-report \
-                        --enableExperimental \
-                        --noupdate
+                        --data /var/jenkins_home/dependency-check-data \
+                        --enableExperimental
                 '''
             }
             post {
@@ -66,6 +65,7 @@ pipeline {
             }
         }
 
+        // 5. ETAPA DE DESPLIEGUE (A PRUEBAS)
         stage('Deploy (to Test Environment)') {
             steps {
                 echo 'Deploying app to test environment...'
@@ -75,29 +75,30 @@ pipeline {
             }
         }
 
+        // 6. ETAPA DE ANÁLISIS DINÁMICO (DAST)
         stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
             steps {
                 echo 'Running dynamic scan with OWASP ZAP...'
-
                 sh 'curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py'
                 sh 'chmod +x zap-baseline.py'
 
                 sh '''
                     ./zap-baseline.py \
-                    -t http://jenkins-lts:5000/hello?name=test \
-                    -H zap \
-                    -p 8090 \
-                    -J zap-baseline-report.json
+                        -t http://jenkins-lts:5000/hello?name=test \
+                        -H zap \
+                        -p 8090 \
+                        -J zap-baseline-report.json
                 '''
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'zap-baseline-report.json'
+                    archiveArtifacts artifacts: 'zap-baseline-report.json', fingerprint: true
                 }
             }
         }
     }
 
+    // 7. ETAPA DE LIMPIEZA
     post {
         always {
             echo 'Pipeline finished. Cleaning up...'
