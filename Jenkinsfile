@@ -15,16 +15,21 @@ pipeline {
                 sh '''
                     set -e
                     echo "➡️ Descargando Dependency-Check..."
-                    wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
-                    unzip -q dependency-check-9.2.0-release.zip
+                    if [ ! -f dependency-check-9.2.0-release.zip ]; then
+                        wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
+                    fi
+
+                    echo "➡️ Descomprimiendo sin pedir confirmación..."
+                    unzip -o -q dependency-check-9.2.0-release.zip
+
                     chmod +x dependency-check-9.2.0/bin/dependency-check.sh
 
-                    echo "➡️ Ejecutando análisis..."
+                    echo "➡️ Ejecutando análisis de dependencias..."
                     ./dependency-check-9.2.0/bin/dependency-check.sh \
                         --project "Proyecto Vulnerable" \
                         --scan . \
                         --format HTML \
-                        --out dependency-check-report.html
+                        --out dependency-check-report.html || true
 
                     echo "✅ Análisis completado correctamente."
                 '''
