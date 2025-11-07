@@ -17,12 +17,12 @@ pipeline {
     stages {
 
         // 2. ETAPA DE CONSTRUCCIÓN
-        // Instala Python, pip y unzip (necesario para Dependency-Check)
+        // ¡CAMBIO! Ahora también instala 'curl'
         stage('Build') {
             steps {
                 echo '📦 Actualizando e instalando Python y herramientas...'
                 sh 'apt-get update'
-                sh 'apt-get install -y python3 python3-pip unzip' // Se añadió 'unzip'
+                sh 'apt-get install -y python3 python3-pip unzip curl' // Se añadió 'curl'
                 
                 echo '🐍 Instalando dependencias de Python...'
                 sh 'pip3 install --break-system-packages -r requirements.txt'
@@ -43,7 +43,7 @@ pipeline {
         }
 
         // 4. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
-        // Esta es tu versión, ahora con la API Key
+        // ¡CAMBIO! Se eliminó '--noupdate' para forzar la descarga de la BD.
         stage('Dependency Check') {
             steps {
                 echo '🔍 Instalando y ejecutando Dependency-Check...'
@@ -59,14 +59,14 @@ pipeline {
                     chmod +x dependency-check/bin/dependency-check.sh
 
                     echo "🚀 Ejecutando análisis con API Key válida..."
+                    # Se quitó --noupdate. Esto TARDARÁ (20-30 min) la primera vez.
                     ./dependency-check/bin/dependency-check.sh \
                         --project "Proyecto-Vulnerable" \
                         --scan . \
                         --format HTML \
                         --out dependency-check-report.html \
                         --nvdApiKey "$NVD_API_KEY" \
-                        --nvdApiDelay 4000 \
-                        --noupdate || echo "⚠️ Advertencia: no se pudo actualizar el feed NVD, usando datos locales."
+                        --nvdApiDelay 4000 || echo "⚠️ Advertencia: Dependency-Check falló o no pudo actualizar el feed NVD."
                 '''
             }
             post {
@@ -94,19 +94,18 @@ pipeline {
         }
 
         // 5. ETAPA DE DESPLIEGUE (A PRUEBAS)
-        // ¡CAMBIO REALIZADO! Ahora usa 'vulnerable.py'
+        // ¡CAMBIO! Aumentado el tiempo de espera a 20s
         stage('Deploy (to Test Environment)') {
             steps {
                 echo '🚀 Desplegando app en segundo plano...'
-                // Ahora ejecuta el archivo 'vulnerable.py'
                 sh 'nohup python3 vulnerable.py &' 
-                sleep 15 // Dar 15 segundos para que la app inicie
+                sleep 20 // Aumentado a 20 segundos para asegurar que la app inicie
                 echo '✅ App iniciada en http://jenkins-lts:5000'
             }
         }
 
         // 6. ETAPA DE ANÁLISIS DINÁMICO (DAST)
-        // Ataca la app que ya está corriendo
+        // ¡CAMBIO! Se ejecuta con 'python3'
         stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
             steps {
                 echo '🧨 Ejecutando análisis dinámico con OWASP ZAP...'
@@ -118,8 +117,8 @@ pipeline {
                     fi
 
                     echo "🚀 Iniciando análisis con OWASP ZAP..."
-                    # ZAP ataca la app (que se llama vulnerable.py pero corre en /hello)
-                    ./zap-baseline.py \
+                    # Se añadió 'python3' para asegurar la ejecución
+                    python3 ./zap-baseline.py \
                         -t http://jenkins-lts:5000/hello?name=test \
                         -H zap \
                         -p 8090 \
@@ -131,7 +130,7 @@ pipeline {
                     echo '📑 Archivando reporte de OWASP ZAP...'
                     archiveArtifacts artifacts: 'zap-report.html', allowEmptyArchive: true
 
-                    // 📊 Publicar el reporte HTML en Jenkins (requiere plugin 'HTML Publisher')
+                    // L 📊 Publicar el reporte HTML en Jenkins (requiere plugin 'HTML Publisher')
                     publishHTML(target: [
                         allowMissing: true,
                         keepAll: true,
@@ -145,7 +144,6 @@ pipeline {
     } // Fin de 'stages'
 
     // 7. ETAPA DE LIMPIEZA
-    // ¡CAMBIO REALIZADO! Ahora detiene 'vulnerable.py'
     post { 
         always {
             echo '🧽 Pipeline finalizado. Limpiando entorno...'
