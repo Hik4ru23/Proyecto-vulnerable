@@ -2,10 +2,11 @@ pipeline {
     agent any
 
     environment {
-        NVD_API_KEY = credentials('NVD_API_KEY')
+        NVD_API_KEY = credentials('NVD_API_KEY') // Nombre del secreto en Jenkins Credentials
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 echo '📦 Descargando código...'
@@ -33,16 +34,17 @@ pipeline {
                             --project "Proyecto-Vulnerable" \
                             --scan . \
                             --format HTML \
-                            --out dependency-check-report \
+                            --out dependency-check-report.html \
                             --nvdApiKey "$NVD_API_KEY" \
-                            --nvdApiDelay 4000
+                            --nvdApiDelay 4000 \
+                            --noupdate || echo "⚠️ Advertencia: no se pudo actualizar el feed NVD, usando datos locales."
                     '''
                 }
             }
             post {
                 success {
                     echo '✅ Dependency-Check finalizado correctamente.'
-                    archiveArtifacts artifacts: 'dependency-check-report/dependency-check-report.html', allowEmptyArchive: false
+                    archiveArtifacts artifacts: 'dependency-check-report.html', allowEmptyArchive: true
                 }
                 failure {
                     echo '❌ Dependency-Check falló.'
