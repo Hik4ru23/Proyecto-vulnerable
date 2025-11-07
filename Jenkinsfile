@@ -1,49 +1,50 @@
 pipeline {
     agent any
 
+    environment {
+        DEP_CHECK_VERSION = "9.2.0"
+    }
+
     stages {
         stage('Checkout') {
             steps {
-                echo '📦 Descargando código...'
+                echo "📦 Descargando código..."
                 git branch: 'main', url: 'https://github.com/Hik4ru23/Proyecto-vulnerable.git'
             }
         }
 
         stage('Dependency Check') {
             steps {
-                echo '🔍 Instalando y ejecutando Dependency-Check...'
+                echo "🔍 Instalando y ejecutando Dependency-Check..."
                 sh '''
                     set -e
+
                     echo "➡️ Descargando Dependency-Check..."
-                    if [ ! -f dependency-check-9.2.0-release.zip ]; then
-                        wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
+                    if [ ! -f dependency-check-${DEP_CHECK_VERSION}-release.zip ]; then
+                        wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v${DEP_CHECK_VERSION}/dependency-check-${DEP_CHECK_VERSION}-release.zip
                     fi
 
                     echo "➡️ Descomprimiendo sin pedir confirmación..."
-                    unzip -o -q dependency-check-9.2.0-release.zip
+                    unzip -o -q dependency-check-${DEP_CHECK_VERSION}-release.zip
 
-                    chmod +x dependency-check-9.2.0/bin/dependency-check.sh
+                    # ⚠️ El zip crea carpeta 'dependency-check', no 'dependency-check-9.2.0'
+                    chmod +x dependency-check/bin/dependency-check.sh
 
-                    echo "➡️ Ejecutando análisis de dependencias..."
-                    ./dependency-check-9.2.0/bin/dependency-check.sh \
-                        --project "Proyecto Vulnerable" \
+                    echo "🚀 Ejecutando análisis..."
+                    ./dependency-check/bin/dependency-check.sh \
+                        --project "Proyecto-Vulnerable" \
                         --scan . \
-                        --format HTML \
-                        --out dependency-check-report.html || true
-
-                    echo "✅ Análisis completado correctamente."
+                        --format "HTML" \
+                        --out dependency-check-report.html
                 '''
             }
             post {
                 success {
-                    publishHTML([
-                        reportDir: '.', 
-                        reportFiles: 'dependency-check-report.html', 
-                        reportName: 'Dependency Check Report'
-                    ])
+                    echo "✅ Dependency-Check completado exitosamente."
+                    archiveArtifacts artifacts: 'dependency-check-report.html', fingerprint: true
                 }
                 failure {
-                    echo '❌ Dependency-Check falló.'
+                    echo "❌ Dependency-Check falló."
                 }
             }
         }
@@ -51,8 +52,8 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Limpiando entorno...'
-            sh 'rm -rf dependency-check-9.2.0 dependency-check-9.2.0-release.zip || true'
+            echo "🧹 Limpiando entorno..."
+            sh 'rm -rf dependency-check dependency-check-*.zip'
         }
     }
 }
