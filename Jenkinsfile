@@ -77,7 +77,7 @@ pipeline {
         stage('Deploy (to Test Environment)') {
             steps {
                 echo 'Deploying app to test environment...'
-                sh 'nohup python3 app.py &'
+                sh 'nohup python3 vulnerable.py &'
                 sleep 15 // Dar 15 segundos para que la app inicie
                 echo 'App is running in the background.'
             }
@@ -115,7 +115,7 @@ pipeline {
         always {
             echo 'Pipeline finished. Cleaning up...'
             // Detiene el servidor de Python
-            sh 'pkill -f "python3 app.py" || true'
+            sh 'pkill -f "python3 vulnerable.py" || true'
             echo 'Cleanup complete.'
         }
     }
