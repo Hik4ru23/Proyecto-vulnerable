@@ -9,20 +9,18 @@ pipeline {
         }
     }
     
-    // Define la API Key de NVD (que creaste en Credentials) como variable global
-    environment {
-        NVD_API_KEY = credentials('NVD_API_KEY')
-    }
+    // ¡CAMBIO! Se eliminó el bloque 'environment' que usaba la API Key.
+    // Ya no es necesario.
 
     stages {
 
         // 2. ETAPA DE CONSTRUCCIÓN
-        // ¡CAMBIO! Ahora también instala 'curl'
+        // ¡CAMBIO! Ahora también instala 'python3-yaml' para ZAP.
         stage('Build') {
             steps {
                 echo '📦 Actualizando e instalando Python y herramientas...'
                 sh 'apt-get update'
-                sh 'apt-get install -y python3 python3-pip unzip curl' // Se añadió 'curl'
+                sh 'apt-get install -y python3 python3-pip unzip curl python3-yaml' // Se añadió 'python3-yaml'
                 
                 echo '🐍 Instalando dependencias de Python...'
                 sh 'pip3 install --break-system-packages -r requirements.txt'
@@ -43,7 +41,7 @@ pipeline {
         }
 
         // 4. ETAPA DE ANÁLISIS DE DEPENDENCIAS (SCA)
-        // ¡CAMBIO! Se eliminó '--noupdate' para forzar la descarga de la BD.
+        // ¡CAMBIO! Se eliminó la API Key. Ahora usará el feed anónimo.
         stage('Dependency Check') {
             steps {
                 echo '🔍 Instalando y ejecutando Dependency-Check...'
@@ -58,15 +56,15 @@ pipeline {
                     unzip -o -q dependency-check-9.2.0-release.zip
                     chmod +x dependency-check/bin/dependency-check.sh
 
-                    echo "🚀 Ejecutando análisis con API Key válida..."
-                    # Se quitó --noupdate. Esto TARDARÁ (20-30 min) la primera vez.
+                    echo "🚀 Ejecutando análisis..."
+                    # Se quitó --nvdApiKey.
+                    # Esto TARDARÁ (20-30 min) la primera vez mientras descarga la BD.
                     ./dependency-check/bin/dependency-check.sh \
                         --project "Proyecto-Vulnerable" \
                         --scan . \
                         --format HTML \
                         --out dependency-check-report.html \
-                        --nvdApiKey "$NVD_API_KEY" \
-                        --nvdApiDelay 4000 || echo "⚠️ Advertencia: Dependency-Check falló o no pudo actualizar el feed NVD."
+                        --nvdApiDelay 4000
                 '''
             }
             post {
@@ -94,18 +92,17 @@ pipeline {
         }
 
         // 5. ETAPA DE DESPLIEGUE (A PRUEBAS)
-        // ¡CAMBIO! Aumentado el tiempo de espera a 20s
         stage('Deploy (to Test Environment)') {
             steps {
                 echo '🚀 Desplegando app en segundo plano...'
                 sh 'nohup python3 vulnerable.py &' 
-                sleep 20 // Aumentado a 20 segundos para asegurar que la app inicie
+                sleep 20 // 20 segundos para asegurar que la app inicie
                 echo '✅ App iniciada en http://jenkins-lts:5000'
             }
         }
 
         // 6. ETAPA DE ANÁLISIS DINÁMICO (DAST)
-        // ¡CAMBIO! Se ejecuta con 'python3'
+        // Se ejecuta con 'python3' (que ahora tiene 'yaml')
         stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
             steps {
                 echo '🧨 Ejecutando análisis dinámico con OWASP ZAP...'
@@ -117,12 +114,12 @@ pipeline {
                     fi
 
                     echo "🚀 Iniciando análisis con OWASP ZAP..."
-                    # Se añadió 'python3' para asegurar la ejecución
+                    # Esto ahora funcionará gracias a 'python3-yaml'
                     python3 ./zap-baseline.py \
                         -t http://jenkins-lts:5000/hello?name=test \
                         -H zap \
                         -p 8090 \
-                        -r zap-report.html || echo "⚠️ OWASP ZAP finalizó con advertencias."
+                        -r zap-report.html
                 '''
             }
             post {
@@ -130,7 +127,7 @@ pipeline {
                     echo '📑 Archivando reporte de OWASP ZAP...'
                     archiveArtifacts artifacts: 'zap-report.html', allowEmptyArchive: true
 
-                    // L 📊 Publicar el reporte HTML en Jenkins (requiere plugin 'HTML Publisher')
+                    // 📊 Publicar el reporte HTML en Jenkins (requiere plugin 'HTML Publisher')
                     publishHTML(target: [
                         allowMissing: true,
                         keepAll: true,
