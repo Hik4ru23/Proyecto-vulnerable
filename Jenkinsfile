@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        NVD_API_KEY = credentials('NVD_API_KEY') // Nombre del secreto en Jenkins Credentials
+        NVD_API_KEY = credentials('NVD_API_KEY') // Secreto almacenado en Jenkins Credentials
     }
 
     stages {
@@ -45,6 +45,15 @@ pipeline {
                 success {
                     echo '✅ Dependency-Check finalizado correctamente.'
                     archiveArtifacts artifacts: 'dependency-check-report.html', allowEmptyArchive: true
+
+                    // 📊 Mostrar el reporte HTML en Jenkins
+                    publishHTML(target: [
+                        allowMissing: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'dependency-check-report.html',
+                        reportName: '🔒 Dependency-Check Report'
+                    ])
                 }
                 failure {
                     echo '❌ Dependency-Check falló.'
@@ -79,6 +88,15 @@ pipeline {
                 always {
                     echo '📑 Archivando reporte de OWASP ZAP...'
                     archiveArtifacts artifacts: 'zap-report.html', allowEmptyArchive: true
+
+                    // 📊 Publicar el reporte HTML en Jenkins
+                    publishHTML(target: [
+                        allowMissing: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'zap-report.html',
+                        reportName: '🕷 OWASP ZAP Report'
+                    ])
                 }
             }
         }
