@@ -16,27 +16,29 @@ pipeline {
         stage('Dependency Check') {
             steps {
                 echo "🔍 Instalando y ejecutando Dependency-Check..."
-                sh '''
-                    set -e
+                withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_API_KEY')]) {
+                    sh '''
+                        set -e
 
-                    echo "➡️ Descargando Dependency-Check..."
-                    if [ ! -f dependency-check-${DEP_CHECK_VERSION}-release.zip ]; then
-                        wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v${DEP_CHECK_VERSION}/dependency-check-${DEP_CHECK_VERSION}-release.zip
-                    fi
+                        echo "➡️ Descargando Dependency-Check..."
+                        if [ ! -f dependency-check-${DEP_CHECK_VERSION}-release.zip ]; then
+                            wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v${DEP_CHECK_VERSION}/dependency-check-${DEP_CHECK_VERSION}-release.zip
+                        fi
 
-                    echo "➡️ Descomprimiendo sin pedir confirmación..."
-                    unzip -o -q dependency-check-${DEP_CHECK_VERSION}-release.zip
+                        echo "➡️ Descomprimiendo sin pedir confirmación..."
+                        unzip -o -q dependency-check-${DEP_CHECK_VERSION}-release.zip
 
-                    # ⚠️ El zip crea carpeta 'dependency-check', no 'dependency-check-9.2.0'
-                    chmod +x dependency-check/bin/dependency-check.sh
+                        chmod +x dependency-check/bin/dependency-check.sh
 
-                    echo "🚀 Ejecutando análisis..."
-                    ./dependency-check/bin/dependency-check.sh \
-                        --project "Proyecto-Vulnerable" \
-                        --scan . \
-                        --format "HTML" \
-                        --out dependency-check-report.html
-                '''
+                        echo "🚀 Ejecutando análisis con API Key..."
+                        ./dependency-check/bin/dependency-check.sh \
+                            --project "Proyecto-Vulnerable" \
+                            --scan . \
+                            --format "HTML" \
+                            --out dependency-check-report.html \
+                            --nvdApiKey "$NVD_API_KEY"
+                    '''
+                }
             }
             post {
                 success {
