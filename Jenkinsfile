@@ -55,5 +55,39 @@ pipeline {
                 }
             }
         }
+
+        stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
+            steps {
+                echo '🧨 Ejecutando análisis dinámico con OWASP ZAP...'
+                sh '''
+                    # Descargar zap-baseline.py si no existe
+                    if [ ! -f zap-baseline.py ]; then
+                        echo "⬇️ Descargando OWASP ZAP baseline..."
+                        curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py
+                        chmod +x zap-baseline.py
+                    fi
+
+                    echo "🚀 Iniciando análisis con OWASP ZAP..."
+                    ./zap-baseline.py \
+                        -t http://jenkins-lts:5000/hello?name=test \
+                        -H zap \
+                        -p 8090 \
+                        -r zap-report.html || echo "⚠️ OWASP ZAP finalizó con advertencias."
+                '''
+            }
+            post {
+                always {
+                    echo '📑 Archivando reporte de OWASP ZAP...'
+                    archiveArtifacts artifacts: 'zap-report.html', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '🧽 Pipeline finalizado. Limpiando entorno...'
+            sh 'pkill -f "python3 vulnerable.py" || true'
+        }
     }
 }
