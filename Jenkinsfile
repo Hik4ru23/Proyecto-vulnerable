@@ -55,7 +55,7 @@ pipeline {
                 }
                 
                 // Publicar resultados
-                dependencyCheckPublisher pattern: 'dependency-check-report.xml', failedTotalHigh: '0', unstableTotalHigh: '10'
+                dependencyCheckPublisher pattern: 'dependency-check-report.xml', failedTotalHigh: 0, unstableTotalHigh: 10
             }
         }
         
