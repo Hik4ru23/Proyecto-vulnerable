@@ -35,7 +35,7 @@ pipeline {
                             --format HTML \
                             --out dependency-check-report.html \
                             --nvdApiKey "$NVD_API_KEY" \
-                            --nvdApiDelay 4000
+                            --nvdApiDelay 8000
                     '''
                 }
             }
@@ -59,7 +59,6 @@ pipeline {
             }
             steps {
                 echo '⚡ Ejecutando OWASP ZAP (DAST)...'
-                // Aquí se ejecutará ZAP en otro paso si lo tienes configurado
             }
         }
     }
@@ -67,7 +66,7 @@ pipeline {
     post {
         always {
             echo '🧽 Pipeline finalizado. Limpiando entorno...'
-            sh 'pkill -f python3 vulnerable.py || true'
+            sh 'pkill -f "python3.*vulnerable.py" || true'
         }
     }
 }
