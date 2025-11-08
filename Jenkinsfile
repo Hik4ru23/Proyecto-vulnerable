@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo '📥 Clonando repositorio...'
+                echo ' Clonando repositorio...'
                 checkout scm
             }
         }
@@ -26,7 +26,7 @@ pipeline {
         
         stage('Test - Unit Tests') {
             steps {
-                echo '🧪 Ejecutando pruebas unitarias...'
+                echo ' Ejecutando pruebas unitarias...'
                 script {
                     sh """
                         docker run --rm \
@@ -39,7 +39,7 @@ pipeline {
         
         stage('Security - Dependency Check') {
             steps {
-                echo '🔍 Analizando dependencias con OWASP Dependency-Check...'
+                echo ' Analizando dependencias con OWASP Dependency-Check...'
                 script {
                     sh """
                         docker run --rm \
@@ -61,7 +61,7 @@ pipeline {
         
         stage('Deploy to Test') {
             steps {
-                echo '🚀 Desplegando aplicación en ambiente de prueba...'
+                echo ' Desplegando aplicación en ambiente de prueba...'
                 script {
                     // Detener contenedor anterior si existe
                     sh 'docker stop vulnerable-app-test 2>/dev/null || true'
@@ -89,7 +89,7 @@ pipeline {
         
         stage('Security - OWASP ZAP Scan') {
             steps {
-                echo '🕷️ Ejecutando escaneo dinámico con OWASP ZAP...'
+                echo ' Ejecutando escaneo dinámico con OWASP ZAP...'
                 script {
                     // Crear directorio para reportes
                     sh 'mkdir -p zap-reports'
@@ -114,7 +114,7 @@ pipeline {
         
         stage('Generate Reports') {
             steps {
-                echo '📄 Reportes generados y archivados'
+                echo ' Reportes generados y archivados'
                 script {
                     // Listar reportes generados
                     sh 'ls -la reports/ || echo "No reports directory"'
@@ -126,7 +126,7 @@ pipeline {
     
     post {
         always {
-            echo '🧹 Limpiando recursos...'
+            echo ' Limpiando recursos...'
             script {
                 sh 'docker stop vulnerable-app-test 2>/dev/null || true'
                 sh 'docker rm vulnerable-app-test 2>/dev/null || true'
@@ -134,8 +134,8 @@ pipeline {
         }
         
         success {
-            echo '✅ Pipeline ejecutado exitosamente!'
-            echo '📊 Revisa los reportes en la sección "Build Artifacts"'
+            echo ' Pipeline ejecutado exitosamente!'
+            echo ' Revisa los reportes en la sección "Build Artifacts"'
         }
         
         failure {
