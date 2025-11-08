@@ -5,8 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY vulnerable.py .
+COPY app.py .
+COPY test_app.py .
 
 EXPOSE 5000
 
-CMD ["python", "vulnerable.py"]
+CMD ["python", "app.py"]
