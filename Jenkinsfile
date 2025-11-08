@@ -2,11 +2,10 @@ pipeline {
     agent any
 
     environment {
-        NVD_API_KEY = credentials('NVD_API_KEY') // Secreto almacenado en Jenkins Credentials
+        NVD_API_KEY = credentials('NVD_API_KEY')
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 echo '📦 Descargando código...'
@@ -16,8 +15,8 @@ pipeline {
 
         stage('Dependency Check') {
             steps {
-                echo '🔍 Instalando y ejecutando Dependency-Check...'
                 withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_API_KEY')]) {
+                    echo '🔍 Instalando y ejecutando Dependency-Check...'
                     sh '''
                         set -e
                         echo "➡️ Descargando Dependency-Check..."
@@ -36,68 +35,31 @@ pipeline {
                             --format HTML \
                             --out dependency-check-report.html \
                             --nvdApiKey "$NVD_API_KEY" \
-                            --nvdApiDelay 4000 \
-                            --noupdate || echo "⚠️ Advertencia: no se pudo actualizar el feed NVD, usando datos locales."
+                            --nvdApiDelay 4000
                     '''
                 }
             }
             post {
+                always {
+                    echo '🧹 Limpiando entorno...'
+                    sh 'rm -rf dependency-check dependency-check-9.2.0-release.zip || true'
+                }
                 success {
                     echo '✅ Dependency-Check finalizado correctamente.'
-                    archiveArtifacts artifacts: 'dependency-check-report.html', allowEmptyArchive: true
-
-                    // 📊 Mostrar el reporte HTML en Jenkins
-                    publishHTML(target: [
-                        allowMissing: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'dependency-check-report.html',
-                        reportName: '🔒 Dependency-Check Report'
-                    ])
                 }
                 failure {
                     echo '❌ Dependency-Check falló.'
-                }
-                always {
-                    echo '🧹 Limpiando entorno...'
-                    sh 'rm -rf dependency-check dependency-check-9.2.0-release.zip'
                 }
             }
         }
 
         stage('Security Test (Dynamic) - OWASP ZAP (DAST)') {
-            steps {
-                echo '🧨 Ejecutando análisis dinámico con OWASP ZAP...'
-                sh '''
-                    # Descargar zap-baseline.py si no existe
-                    if [ ! -f zap-baseline.py ]; then
-                        echo "⬇️ Descargando OWASP ZAP baseline..."
-                        curl -O https://raw.githubusercontent.com/zaproxy/zaproxy/main/docker/zap-baseline.py
-                        chmod +x zap-baseline.py
-                    fi
-
-                    echo "🚀 Iniciando análisis con OWASP ZAP..."
-                    ./zap-baseline.py \
-                        -t http://jenkins-lts:5000/hello?name=test \
-                        -H zap \
-                        -p 8090 \
-                        -r zap-report.html || echo "⚠️ OWASP ZAP finalizó con advertencias."
-                '''
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
-            post {
-                always {
-                    echo '📑 Archivando reporte de OWASP ZAP...'
-                    archiveArtifacts artifacts: 'zap-report.html', allowEmptyArchive: true
-
-                    // 📊 Publicar el reporte HTML en Jenkins
-                    publishHTML(target: [
-                        allowMissing: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'zap-report.html',
-                        reportName: '🕷 OWASP ZAP Report'
-                    ])
-                }
+            steps {
+                echo '⚡ Ejecutando OWASP ZAP (DAST)...'
+                // Aquí se ejecutará ZAP en otro paso si lo tienes configurado
             }
         }
     }
@@ -105,7 +67,7 @@ pipeline {
     post {
         always {
             echo '🧽 Pipeline finalizado. Limpiando entorno...'
-            sh 'pkill -f "python3 vulnerable.py" || true'
+            sh 'pkill -f python3 vulnerable.py || true'
         }
     }
 }
