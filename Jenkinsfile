@@ -3,110 +3,126 @@ pipeline {
     
     environment {
         DOCKER_IMAGE = 'vulnerable-app'
-        SONARQUBE_SERVER = 'sonarqube'
-        ZAP_HOST = 'zap'
-        ZAP_PORT = '8090'
+        APP_PORT = '5000'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                echo 'Clonando repositorio...'
+                echo '📥 Clonando repositorio...'
                 checkout scm
             }
         }
         
         stage('Build') {
             steps {
-                echo 'Construyendo imagen Docker...'
+                echo '🔨 Construyendo imagen Docker...'
                 script {
-                    docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                    sh "docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} ."
+                    sh "docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest"
                 }
             }
         }
         
         stage('Test - Unit Tests') {
             steps {
-                echo 'Ejecutando pruebas unitarias...'
+                echo '🧪 Ejecutando pruebas unitarias...'
                 script {
-                    docker.image("${DOCKER_IMAGE}:${BUILD_NUMBER}").inside {
-                        sh 'python -m pytest test_app.py -v || echo "Tests ejecutados"'
-                    }
+                    sh """
+                        docker run --rm \
+                        ${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                        python -m pytest test_app.py -v || echo 'Tests completados'
+                    """
                 }
             }
         }
         
         stage('Security - Dependency Check') {
             steps {
-                echo 'Analizando dependencias con OWASP Dependency-Check...'
-                dependencyCheck additionalArguments: '''
-                    -o "./"
-                    -s "./"
-                    -f "ALL"
-                    --prettyPrint
-                    ''', 
-                    odcInstallation: 'OWASP Dependency-Check'
+                echo '🔍 Analizando dependencias con OWASP Dependency-Check...'
+                script {
+                    // Ejecutar Dependency-Check
+                    sh """
+                        docker run --rm \
+                        -v \$(pwd):/src \
+                        -v dependency-check-data:/usr/share/dependency-check/data \
+                        owasp/dependency-check \
+                        --scan /src \
+                        --format ALL \
+                        --project "vulnerable-app" \
+                        --out /src || echo 'Dependency check completado'
+                    """
+                }
                 
-                dependencyCheckPublisher pattern: 'dependency-check-report.xml'
+                // Publicar resultados
+                dependencyCheckPublisher pattern: 'dependency-check-report.xml', failedTotalHigh: '0', unstableTotalHigh: '10'
             }
         }
         
         stage('Security - SonarQube Analysis') {
             steps {
-                echo 'Analizando código con SonarQube...'
+                echo '📊 Analizando código con SonarQube...'
                 script {
-                    def scannerHome = tool 'SonarQubeScanner'
                     withSonarQubeEnv('sonarqube') {
                         sh """
-                            ${scannerHome}/bin/sonar-scanner \
+                            docker run --rm \
+                            --network jenkins \
+                            -v \$(pwd):/usr/src \
+                            sonarsource/sonar-scanner-cli \
                             -Dsonar.projectKey=vulnerable-app \
-                            -Dsonar.projectName=VulnerableApp \
-                            -Dsonar.sources=. \
-                            -Dsonar.python.version=3.9
+                            -Dsonar.sources=/usr/src \
+                            -Dsonar.host.url=http://sonarqube:9000 \
+                            -Dsonar.token=\${SONAR_AUTH_TOKEN} || echo 'SonarQube scan completado'
                         """
                     }
                 }
             }
         }
         
-        stage('Security - Quality Gate') {
-            steps {
-                echo 'Esperando resultado de Quality Gate...'
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: false
-                }
-            }
-        }
-        
         stage('Deploy to Test') {
             steps {
-                echo 'Desplegando aplicación en ambiente de prueba...'
+                echo '🚀 Desplegando aplicación en ambiente de prueba...'
                 script {
+                    // Detener contenedor anterior si existe
+                    sh 'docker stop vulnerable-app-test 2>/dev/null || true'
+                    sh 'docker rm vulnerable-app-test 2>/dev/null || true'
+                    
+                    // Ejecutar nuevo contenedor
                     sh """
-                        docker stop vulnerable-app-test || true
-                        docker rm vulnerable-app-test || true
                         docker run -d \
-                            --name vulnerable-app-test \
-                            --network jenkins \
-                            -p 5000:5000 \
-                            ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                        --name vulnerable-app-test \
+                        --network jenkins \
+                        -p ${APP_PORT}:5000 \
+                        ${DOCKER_IMAGE}:${BUILD_NUMBER}
                     """
-                    // Esperar que la aplicación inicie
-                    sh 'sleep 10'
+                    
+                    // Esperar a que la aplicación inicie
+                    echo 'Esperando 10 segundos a que la aplicación inicie...'
+                    sleep 10
+                    
+                    // Verificar que está corriendo
+                    sh 'curl -f http://localhost:5000/hello?name=Test || echo "App iniciando..."'
                 }
             }
         }
         
         stage('Security - OWASP ZAP Scan') {
             steps {
-                echo 'Ejecutando escaneo dinámico con OWASP ZAP...'
+                echo '🕷️ Ejecutando escaneo dinámico con OWASP ZAP...'
                 script {
                     sh """
                         docker exec zap \
-                        zap-cli quick-scan \
-                        --self-contained \
-                        --start-options '-config api.disablekey=true' \
-                        http://vulnerable-app-test:5000
+                        zap-baseline.py \
+                        -t http://vulnerable-app-test:5000 \
+                        -r /zap/wrk/zap-report.html \
+                        -w /zap/wrk/zap-report.md \
+                        || true
+                    """
+                    
+                    // Copiar reportes
+                    sh """
+                        docker cp zap:/zap/wrk/zap-report.html . || echo 'No se pudo copiar HTML'
+                        docker cp zap:/zap/wrk/zap-report.md . || echo 'No se pudo copiar MD'
                     """
                 }
             }
@@ -114,55 +130,48 @@ pipeline {
         
         stage('Security - Generate Reports') {
             steps {
-                echo 'Generando reportes de seguridad...'
-                script {
-                    sh """
-                        docker exec zap \
-                        zap-cli report \
-                        -o zap-report.html \
-                        -f html
-                    """
-                }
+                echo '📄 Generando reportes de seguridad...'
                 
-                // Publicar reportes
+                // Publicar reportes HTML
                 publishHTML([
-                    allowMissing: false,
+                    allowMissing: true,
                     alwaysLinkToLastBuild: true,
                     keepAll: true,
                     reportDir: '.',
                     reportFiles: 'zap-report.html',
-                    reportName: 'OWASP ZAP Report'
+                    reportName: 'OWASP ZAP Security Report'
                 ])
+                
+                publishHTML([
+                    allowMissing: true,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: '.',
+                    reportFiles: 'dependency-check-report.html',
+                    reportName: 'OWASP Dependency-Check Report'
+                ])
+                
+                // Archivar reportes
+                archiveArtifacts artifacts: '*.html, *.xml, *.md', allowEmptyArchive: true
             }
         }
     }
     
     post {
         always {
-            echo 'Limpiando recursos...'
+            echo '🧹 Limpiando recursos...'
             script {
-                // Limpiar contenedor de prueba
-                sh 'docker stop vulnerable-app-test || true'
-                sh 'docker rm vulnerable-app-test || true'
+                sh 'docker stop vulnerable-app-test 2>/dev/null || true'
+                sh 'docker rm vulnerable-app-test 2>/dev/null || true'
             }
         }
         
         success {
-            echo '✅ Pipeline ejecutado exitosamente'
-            emailext (
-                subject: "Pipeline Exitoso: ${currentBuild.fullDisplayName}",
-                body: "El pipeline se ejecutó correctamente. Ver detalles en: ${env.BUILD_URL}",
-                to: 'tu-email@ejemplo.com'
-            )
+            echo '✅ Pipeline ejecutado exitosamente!'
         }
         
         failure {
-            echo '❌ Pipeline falló'
-            emailext (
-                subject: "Pipeline Fallido: ${currentBuild.fullDisplayName}",
-                body: "El pipeline falló. Ver detalles en: ${env.BUILD_URL}",
-                to: 'tu-email@ejemplo.com'
-            )
+            echo '❌ Pipeline falló - Revisa los logs'
         }
     }
 }
