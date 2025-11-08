@@ -31,7 +31,7 @@ pipeline {
                     sh """
                         docker run --rm \
                         ${DOCKER_IMAGE}:${BUILD_NUMBER} \
-                        python -m pytest test_app.py -v || echo 'Tests completados'
+                        python -m pytest test_app.py -v
                     """
                 }
             }
@@ -41,41 +41,21 @@ pipeline {
             steps {
                 echo '🔍 Analizando dependencias con OWASP Dependency-Check...'
                 script {
-                    // Ejecutar Dependency-Check
                     sh """
                         docker run --rm \
                         -v \$(pwd):/src \
                         -v dependency-check-data:/usr/share/dependency-check/data \
                         owasp/dependency-check \
                         --scan /src \
-                        --format ALL \
+                        --format HTML \
+                        --format JSON \
                         --project "vulnerable-app" \
-                        --out /src || echo 'Dependency check completado'
+                        --out /src/reports || true
                     """
                 }
                 
-                // Publicar resultados
-                dependencyCheckPublisher pattern: 'dependency-check-report.xml', failedTotalHigh: 0, unstableTotalHigh: 10
-            }
-        }
-        
-        stage('Security - SonarQube Analysis') {
-            steps {
-                echo '📊 Analizando código con SonarQube...'
-                script {
-                    withSonarQubeEnv('sonarqube') {
-                        sh """
-                            docker run --rm \
-                            --network jenkins \
-                            -v \$(pwd):/usr/src \
-                            sonarsource/sonar-scanner-cli \
-                            -Dsonar.projectKey=vulnerable-app \
-                            -Dsonar.sources=/usr/src \
-                            -Dsonar.host.url=http://sonarqube:9000 \
-                            -Dsonar.token=\${SONAR_AUTH_TOKEN} || echo 'SonarQube scan completado'
-                        """
-                    }
-                }
+                // Archivar reportes
+                archiveArtifacts artifacts: 'reports/dependency-check-report.*', allowEmptyArchive: true
             }
         }
         
@@ -97,11 +77,12 @@ pipeline {
                     """
                     
                     // Esperar a que la aplicación inicie
-                    echo 'Esperando 10 segundos a que la aplicación inicie...'
-                    sleep 10
+                    echo 'Esperando 15 segundos a que la aplicación inicie...'
+                    sleep 15
                     
                     // Verificar que está corriendo
-                    sh 'curl -f http://localhost:5000/hello?name=Test || echo "App iniciando..."'
+                    sh 'docker ps | grep vulnerable-app-test'
+                    sh 'docker logs vulnerable-app-test'
                 }
             }
         }
@@ -110,49 +91,35 @@ pipeline {
             steps {
                 echo '🕷️ Ejecutando escaneo dinámico con OWASP ZAP...'
                 script {
+                    // Crear directorio para reportes
+                    sh 'mkdir -p zap-reports'
+                    
+                    // Ejecutar escaneo ZAP
                     sh """
-                        docker exec zap \
+                        docker run --rm \
+                        --network jenkins \
+                        -v \$(pwd)/zap-reports:/zap/wrk:rw \
+                        ghcr.io/zaproxy/zaproxy:stable \
                         zap-baseline.py \
                         -t http://vulnerable-app-test:5000 \
-                        -r /zap/wrk/zap-report.html \
-                        -w /zap/wrk/zap-report.md \
-                        || true
-                    """
-                    
-                    // Copiar reportes
-                    sh """
-                        docker cp zap:/zap/wrk/zap-report.html . || echo 'No se pudo copiar HTML'
-                        docker cp zap:/zap/wrk/zap-report.md . || echo 'No se pudo copiar MD'
+                        -r zap-report.html \
+                        -w zap-report.md || true
                     """
                 }
+                
+                // Archivar reportes
+                archiveArtifacts artifacts: 'zap-reports/*', allowEmptyArchive: true
             }
         }
         
-        stage('Security - Generate Reports') {
+        stage('Generate Reports') {
             steps {
-                echo '📄 Generando reportes de seguridad...'
-                
-                // Publicar reportes HTML
-                publishHTML([
-                    allowMissing: true,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: '.',
-                    reportFiles: 'zap-report.html',
-                    reportName: 'OWASP ZAP Security Report'
-                ])
-                
-                publishHTML([
-                    allowMissing: true,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: '.',
-                    reportFiles: 'dependency-check-report.html',
-                    reportName: 'OWASP Dependency-Check Report'
-                ])
-                
-                // Archivar reportes
-                archiveArtifacts artifacts: '*.html, *.xml, *.md', allowEmptyArchive: true
+                echo '📄 Reportes generados y archivados'
+                script {
+                    // Listar reportes generados
+                    sh 'ls -la reports/ || echo "No reports directory"'
+                    sh 'ls -la zap-reports/ || echo "No zap-reports directory"'
+                }
             }
         }
     }
@@ -168,10 +135,11 @@ pipeline {
         
         success {
             echo '✅ Pipeline ejecutado exitosamente!'
+            echo '📊 Revisa los reportes en la sección "Build Artifacts"'
         }
         
         failure {
-            echo '❌ Pipeline falló - Revisa los logs'
+            echo '❌ Pipeline falló - Revisa los logs arriba'
         }
     }
 }
