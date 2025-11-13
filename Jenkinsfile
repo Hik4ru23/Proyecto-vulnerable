@@ -12,7 +12,6 @@ pipeline {
         stage('Install Python') {
             steps {
                 sh '''
-                    #!/bin/bash
                     echo "📦 Installing Python..."
                     apt update
                     apt install -y python3 python3-venv python3-pip
@@ -23,11 +22,10 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 sh '''
-                    #!/bin/bash
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
                     echo "Installing dependencies..."
-                    source venv/bin/activate
+                    . venv/bin/activate
                     pip install --break-system-packages -r requirements.txt
                 '''
             }
@@ -36,8 +34,7 @@ pipeline {
         stage('Python Security Audit') {
             steps {
                 sh '''
-                    #!/bin/bash
-                    source venv/bin/activate
+                    . venv/bin/activate
                     pip install --break-system-packages pip-audit
                     mkdir -p dependency-check-report
                     pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
@@ -67,7 +64,6 @@ pipeline {
                 NVD_API_KEY = credentials('nvdApiKey')
             }
             steps {
-                // Uso de comillas simples para evitar fugas de credenciales
                 dependencyCheck additionalArguments: '--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY', odcInstallation: 'DependencyCheck'
             }
         }
