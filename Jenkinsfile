@@ -27,8 +27,14 @@ pipeline {
                 sh '''
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --break-system-packages -r requirements.txt
+                    
+                    echo "🐍 Installing dependencies..."
+                    // Llama a pip directamente desde el venv
+                    venv/bin/pip install --break-system-packages -r requirements.txt
+                    
+                    echo "🐍 Installing security tools..."
+                    // Instala las herramientas de auditoría en el mismo venv
+                    venv/bin/pip install --break-system-packages pip-audit safety
                 '''
             }
         }
@@ -36,17 +42,17 @@ pipeline {
         stage('Python Security Audit') {
             steps {
                 sh '''
-                    . venv/bin/activate
-                    pip install --break-system-packages pip-audit safety
                     mkdir -p dependency-check-report
                     
                     echo "🔍 Running pip-audit..."
-                    pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
-                    pip-audit -r requirements.txt -f json -o dependency-check-report/pip-audit.json || true
+                    // Llama a pip-audit directamente desde el venv
+                    venv/bin/pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
+                    venv/bin/pip-audit -r requirements.txt -f json -o dependency-check-report/pip-audit.json || true
                     
                     echo "🔍 Running safety check..."
-                    safety check -r requirements.txt --json > dependency-check-report/safety-report.json || true
-                    safety check -r requirements.txt > dependency-check-report/safety-report.txt || true
+                    // Llama a safety directamente desde el venv
+                    venv/bin/safety check -r requirements.txt --json > dependency-check-report/safety-report.json || true
+                    venv/bin/safety check -r requirements.txt > dependency-check-report/safety-report.txt || true
                 '''
             }
         }
@@ -396,7 +402,7 @@ HTMLEOF
                 sh '''
                     echo ""
                     echo "═══════════════════════════════════════"
-                    echo "           📊 SCAN SUMMARY"
+                    echo "              📊 SCAN SUMMARY"
                     echo "═══════════════════════════════════════"
                     echo ""
                     
@@ -420,7 +426,7 @@ HTMLEOF
                     
                     echo ""
                     echo "📁 Generated Files:"
-                    ls -lh dependency-check-report/ | grep -v "^total" | awk '{print "   " $9 " (" $5 ")"}'
+                    ls -lh dependency-check-report/ | grep -v "^total" | awk '{print "    " $9 " (" $5 ")"}'
                     echo ""
                     echo "═══════════════════════════════════════"
                 '''
