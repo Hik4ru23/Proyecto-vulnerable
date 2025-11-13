@@ -24,7 +24,6 @@ pipeline {
                 sh '''
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
-                    echo "Installing dependencies..."
                     . venv/bin/activate
                     pip install --break-system-packages -r requirements.txt
                 '''
@@ -45,7 +44,8 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    def scannerHome = tool 'SonarQubeScanner'
+                    // Asegúrate de que el nombre coincida con la configuración de Jenkins
+                    def scannerHome = tool name: 'SonarQubeScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
                     withSonarQubeEnv('SonarQubeScanner') {
                         sh """
                             ${scannerHome}/bin/sonar-scanner \
@@ -64,7 +64,10 @@ pipeline {
                 NVD_API_KEY = credentials('nvdApiKey')
             }
             steps {
-                dependencyCheck additionalArguments: '--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY', odcInstallation: 'DependencyCheck'
+                dependencyCheck(
+                    additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY",
+                    odcInstallation: 'DependencyCheck' // Nombre exacto de la instalación de DependencyCheck
+                )
             }
         }
 
