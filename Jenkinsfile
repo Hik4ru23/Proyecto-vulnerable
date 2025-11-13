@@ -60,16 +60,21 @@ pipeline {
         }
 
         stage('Dependency Check') {
-            environment {
-                NVD_API_KEY = credentials('nvdApiKey')
-            }
-            steps {
-                dependencyCheck(
-                    additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY",
-                    odcInstallation: 'DependencyCheck' // Nombre exacto de la instalación de DependencyCheck
-                )
-            }
+    environment {
+        NVD_API_KEY = credentials('nvdApiKey')
+    }
+    steps {
+        script {
+            // Usar variables de entorno sin interpolación directa en comillas dobles
+            def additionalArgs = "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${env.NVD_API_KEY}"
+            
+            dependencyCheck(
+                additionalArguments: additionalArgs,
+                odcInstallation: 'DependencyCheck' // Nombre exacto de la instalación
+            )
         }
+    }
+}
 
         stage('Publish Reports') {
             steps {
