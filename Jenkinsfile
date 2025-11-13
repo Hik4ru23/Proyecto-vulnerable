@@ -25,7 +25,7 @@ pipeline {
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
                     . venv/bin/activate
-                    pip install --upgrade pip --break-system-packages
+                    echo "Installing dependencies..."
                     pip install -r requirements.txt --break-system-packages
                 '''
             }
