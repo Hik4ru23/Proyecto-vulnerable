@@ -24,9 +24,9 @@ pipeline {
                 sh '''
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
-                    . venv/bin/activate
                     echo "Installing dependencies..."
-                    pip install -r requirements.txt --break-system-packages
+                    source venv/bin/activate
+                    pip install --break-system-packages -r requirements.txt
                 '''
             }
         }
@@ -34,8 +34,8 @@ pipeline {
         stage('Python Security Audit') {
             steps {
                 sh '''
-                    . venv/bin/activate
-                    pip install pip-audit --break-system-packages
+                    source venv/bin/activate
+                    pip install --break-system-packages pip-audit
                     mkdir -p dependency-check-report
                     pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
                 '''
@@ -64,7 +64,10 @@ pipeline {
                 NVD_API_KEY = credentials('nvdApiKey')
             }
             steps {
-                dependencyCheck additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${NVD_API_KEY}", odcInstallation: 'DependencyCheck'
+                dependencyCheck(
+                    odcInstallation: 'DependencyCheck',
+                    additionalArguments: '--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY'
+                )
             }
         }
 
