@@ -1,6 +1,11 @@
 pipeline {
     agent any
     
+    // Añade esta opción para limpiar el workspace
+    options {
+        cleanWs()
+    }
+    
     environment {
         PROJECT_NAME = "pipeline-test"
         SONARQUBE_URL = "http://sonarqube:9000"
@@ -29,11 +34,11 @@ pipeline {
                     python3 -m venv venv
                     
                     echo "🐍 Installing dependencies..."
-                    // Llama a pip directamente desde el venv
+                    # Llama a pip directamente desde el venv (¡Corregido!)
                     venv/bin/pip install --break-system-packages -r requirements.txt
                     
                     echo "🐍 Installing security tools..."
-                    // Instala las herramientas de auditoría en el mismo venv
+                    # Instala las herramientas de auditoría en el mismo venv
                     venv/bin/pip install --break-system-packages pip-audit safety
                 '''
             }
@@ -45,12 +50,12 @@ pipeline {
                     mkdir -p dependency-check-report
                     
                     echo "🔍 Running pip-audit..."
-                    // Llama a pip-audit directamente desde el venv
+                    # Llama a pip-audit directamente desde el venv
                     venv/bin/pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
                     venv/bin/pip-audit -r requirements.txt -f json -o dependency-check-report/pip-audit.json || true
                     
                     echo "🔍 Running safety check..."
-                    // Llama a safety directamente desde el venv
+                    # Llama a safety directamente desde el venv
                     venv/bin/safety check -r requirements.txt --json > dependency-check-report/safety-report.json || true
                     venv/bin/safety check -r requirements.txt > dependency-check-report/safety-report.txt || true
                 '''
@@ -426,7 +431,12 @@ HTMLEOF
                     
                     echo ""
                     echo "📁 Generated Files:"
-                    ls -lh dependency-check-report/ | grep -v "^total" | awk '{print "    " $9 " (" $5 ")"}'
+                    # El 'ls' fallará si la carpeta no existe, así que comprobamos primero
+                    if [ -d "dependency-check-report" ]; then
+                        ls -lh dependency-check-report/ | grep -v "^total" | awk '{print "    " $9 " (" $5 ")"}'
+                    else
+                        echo "    No report directory found."
+                    fi
                     echo ""
                     echo "═══════════════════════════════════════"
                 '''
