@@ -1,13 +1,13 @@
 pipeline {
     agent any
-
+    
     environment {
         PROJECT_NAME = "pipeline-test"
         SONARQUBE_URL = "http://sonarqube:9000"
         SONARQUBE_TOKEN = "sqa_77e30137bb8e01768b25a57b9671ad1db4959dcf"
         TARGET_URL = "http://172.23.202.60:5000"
     }
-
+    
     stages {
         stage('Install Python') {
             steps {
@@ -18,7 +18,7 @@ pipeline {
                 '''
             }
         }
-
+        
         stage('Setup Environment') {
             steps {
                 sh '''
@@ -29,7 +29,7 @@ pipeline {
                 '''
             }
         }
-
+        
         stage('Python Security Audit') {
             steps {
                 sh '''
@@ -40,11 +40,10 @@ pipeline {
                 '''
             }
         }
-
+        
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    // Nombre exacto del SonarQube Scanner configurado en Jenkins
                     def scannerHome = tool name: 'SonarQubeScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
                     withSonarQubeEnv('SonarQubeScanner') {
                         sh """
@@ -58,26 +57,23 @@ pipeline {
                 }
             }
         }
-
+        
         stage('Dependency Check') {
-            environment {
-                NVD_API_KEY = credentials('nvdApiKey')
-            }
             steps {
-                script {
-                    // Pasar el secreto de forma segura usando env
-                    def additionalArgs = "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${env.NVD_API_KEY}"
-
-                    dependencyCheck(
-                        additionalArguments: additionalArgs,
-                        odcInstallation: 'DependencyCheck' // Debe coincidir con la configuración de Jenkins
-                    )
+                withCredentials([string(credentialsId: 'nvdApiKey', variable: 'NVD_API_KEY')]) {
+                    script {
+                        dependencyCheck(
+                            additionalArguments: "--scan . --format HTML --format JSON --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey \$NVD_API_KEY",
+                            odcInstallation: 'DependencyCheck'
+                        )
+                    }
                 }
             }
         }
-
+        
         stage('Publish Reports') {
             steps {
+                // Publicar reporte de Dependency Check
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
@@ -86,7 +82,36 @@ pipeline {
                     reportFiles: 'dependency-check-report.html',
                     reportName: 'OWASP Dependency Check Report'
                 ])
+                
+                // Publicar reporte de pip-audit si existe
+                publishHTML([
+                    allowMissing: true,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'dependency-check-report',
+                    reportFiles: 'pip-audit.md',
+                    reportName: 'Python Security Audit Report'
+                ])
+                
+                // Archivar los reportes
+                archiveArtifacts artifacts: 'dependency-check-report/**/*', allowEmptyArchive: true
             }
+        }
+    }
+    
+    post {
+        always {
+            // Limpiar workspace si es necesario
+            cleanWs(cleanWhenNotBuilt: false,
+                    deleteDirs: true,
+                    disableDeferredWipeout: true,
+                    notFailBuild: true)
+        }
+        success {
+            echo '✅ Pipeline ejecutado exitosamente!'
+        }
+        failure {
+            echo '❌ Pipeline falló. Revisa los logs para más detalles.'
         }
     }
 }
