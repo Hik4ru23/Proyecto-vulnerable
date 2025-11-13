@@ -12,6 +12,7 @@ pipeline {
         stage('Install Python') {
             steps {
                 sh '''
+                    #!/bin/bash
                     echo "📦 Installing Python..."
                     apt update
                     apt install -y python3 python3-venv python3-pip
@@ -22,6 +23,7 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 sh '''
+                    #!/bin/bash
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
                     echo "Installing dependencies..."
@@ -34,6 +36,7 @@ pipeline {
         stage('Python Security Audit') {
             steps {
                 sh '''
+                    #!/bin/bash
                     source venv/bin/activate
                     pip install --break-system-packages pip-audit
                     mkdir -p dependency-check-report
@@ -49,10 +52,10 @@ pipeline {
                     withSonarQubeEnv('SonarQubeScanner') {
                         sh """
                             ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=$PROJECT_NAME \
+                                -Dsonar.projectKey=${PROJECT_NAME} \
                                 -Dsonar.sources=. \
-                                -Dsonar.host.url=$SONARQUBE_URL \
-                                -Dsonar.login=$SONARQUBE_TOKEN
+                                -Dsonar.host.url=${SONARQUBE_URL} \
+                                -Dsonar.login=${SONARQUBE_TOKEN}
                         """
                     }
                 }
@@ -64,10 +67,8 @@ pipeline {
                 NVD_API_KEY = credentials('nvdApiKey')
             }
             steps {
-                dependencyCheck(
-                    odcInstallation: 'DependencyCheck',
-                    additionalArguments: '--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY'
-                )
+                // Uso de comillas simples para evitar fugas de credenciales
+                dependencyCheck additionalArguments: '--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey $NVD_API_KEY', odcInstallation: 'DependencyCheck'
             }
         }
 
