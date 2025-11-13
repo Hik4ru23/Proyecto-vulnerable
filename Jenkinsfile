@@ -44,7 +44,7 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    // Asegúrate de que el nombre coincida con la configuración de Jenkins
+                    // Nombre exacto del SonarQube Scanner configurado en Jenkins
                     def scannerHome = tool name: 'SonarQubeScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
                     withSonarQubeEnv('SonarQubeScanner') {
                         sh """
@@ -60,21 +60,21 @@ pipeline {
         }
 
         stage('Dependency Check') {
-    environment {
-        NVD_API_KEY = credentials('nvdApiKey')
-    }
-    steps {
-        script {
-            // Usar variables de entorno sin interpolación directa en comillas dobles
-            def additionalArgs = "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${env.NVD_API_KEY}"
-            
-            dependencyCheck(
-                additionalArguments: additionalArgs,
-                odcInstallation: 'DependencyCheck' // Nombre exacto de la instalación
-            )
+            environment {
+                NVD_API_KEY = credentials('nvdApiKey')
+            }
+            steps {
+                script {
+                    // Pasar el secreto de forma segura usando env
+                    def additionalArgs = "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${env.NVD_API_KEY}"
+
+                    dependencyCheck(
+                        additionalArguments: additionalArgs,
+                        odcInstallation: 'DependencyCheck' // Debe coincidir con la configuración de Jenkins
+                    )
+                }
+            }
         }
-    }
-}
 
         stage('Publish Reports') {
             steps {
