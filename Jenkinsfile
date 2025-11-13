@@ -25,8 +25,8 @@ pipeline {
                     echo "🐍 Setting up virtual environment..."
                     python3 -m venv venv
                     . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
+                    pip install --upgrade pip --break-system-packages
+                    pip install -r requirements.txt --break-system-packages
                 '''
             }
         }
@@ -34,9 +34,8 @@ pipeline {
         stage('Python Security Audit') {
             steps {
                 sh '''
-                    echo "🔍 Running pip-audit..."
                     . venv/bin/activate
-                    pip install pip-audit
+                    pip install pip-audit --break-system-packages
                     mkdir -p dependency-check-report
                     pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
                 '''
@@ -46,15 +45,14 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    echo "🚀 Running SonarQube analysis..."
                     def scannerHome = tool 'SonarQubeScanner'
-                    withSonarQubeEnv('SonarQube') { // 👈 usa el nombre del servidor configurado
+                    withSonarQubeEnv('SonarQubeScanner') {
                         sh """
                             ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=${PROJECT_NAME} \
+                                -Dsonar.projectKey=$PROJECT_NAME \
                                 -Dsonar.sources=. \
-                                -Dsonar.host.url=${SONARQUBE_URL} \
-                                -Dsonar.login=${SONARQUBE_TOKEN}
+                                -Dsonar.host.url=$SONARQUBE_URL \
+                                -Dsonar.login=$SONARQUBE_TOKEN
                         """
                     }
                 }
@@ -66,14 +64,12 @@ pipeline {
                 NVD_API_KEY = credentials('nvdApiKey')
             }
             steps {
-                echo "🧪 Running OWASP Dependency-Check..."
                 dependencyCheck additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${NVD_API_KEY}", odcInstallation: 'DependencyCheck'
             }
         }
 
         stage('Publish Reports') {
             steps {
-                echo "📊 Publishing HTML reports..."
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
