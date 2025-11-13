@@ -199,15 +199,15 @@ pipeline {
                 script {
                     sh '''
                         echo "==================================="
-                        echo "  RESUMEN DE ANÁLISIS DE SEGURIDAD"
+                        echo "  RESUMEN DE ANALISIS DE SEGURIDAD"
                         echo "==================================="
                         echo ""
-                        echo "📁 Reportes generados:"
-                        ls -lh reports/ 2>/dev/null || echo "  ⚠️  No se encontró directorio reports/"
+                        echo "Reportes generados:"
+                        ls -lh reports/ 2>/dev/null || echo "  No se encontro directorio reports/"
                         echo ""
-                        ls -lh zap-reports/ 2>/dev/null || echo "  ⚠️  No se encontró directorio zap-reports/"
+                        ls -lh zap-reports/ 2>/dev/null || echo "  No se encontro directorio zap-reports/"
                         echo ""
-                        ls -lh *.json 2>/dev/null || echo "  ℹ️  No se encontraron reportes JSON adicionales"
+                        ls -lh *.json 2>/dev/null || echo "  No se encontraron reportes JSON adicionales"
                         echo ""
                         echo "==================================="
                     '''
@@ -218,7 +218,7 @@ pipeline {
     
     post {
         always {
-            echo '🧹 Limpiando recursos...'
+            echo 'Limpiando recursos...'
             script {
                 sh 'docker stop vulnerable-app-test 2>/dev/null || true'
                 sh 'docker rm vulnerable-app-test 2>/dev/null || true'
@@ -226,29 +226,30 @@ pipeline {
         }
         
         success {
-            echo '✅ ¡Pipeline ejecutado exitosamente!'
-            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            echo '📊 REPORTES DISPONIBLES:'
-            echo '   • Dependency-Check: Ver en "OWASP Dependency-Check Report"'
-            echo '   • OWASP ZAP: Ver en "OWASP ZAP Security Report"'
-            echo '   • pip-audit: Ver en "Build Artifacts"'
-            echo '   • SonarQube: http://sonarqube:9000/dashboard?id=pipeline-test'
-            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+            echo 'Pipeline ejecutado exitosamente!'
+            echo '============================================'
+            echo 'REPORTES DISPONIBLES:'
+            echo '  - Dependency-Check: Ver en OWASP Dependency-Check Report'
+            echo '  - OWASP ZAP: Ver en OWASP ZAP Security Report'
+            echo '  - pip-audit: Ver en Build Artifacts'
+            echo '  - SonarQube: http://sonarqube:9000/dashboard?id=pipeline-test'
+            echo '============================================'
         }
         
         failure {
-            echo '❌ Pipeline falló'
-            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            echo '💡 Revisa los logs arriba para identificar el error'
-            echo '   Etapas comunes de fallo:'
-            echo '   • Build: Verifica Dockerfile y dependencias'
-            echo '   • Tests: Verifica test_app.py'
-            echo '   • Dependency-Check: Primera ejecución puede tardar 30+ min'
-            echo '   • ZAP: Verifica que la app esté corriendo'
-            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+            echo 'Pipeline fallo'
+            echo '============================================'
+            echo 'Revisa los logs arriba para identificar el error'
+            echo 'Etapas comunes de fallo:'
+            echo '  - Build: Verifica Dockerfile y dependencias'
+            echo '  - Tests: Verifica test_app.py'
+            echo '  - Dependency-Check: Primera ejecucion puede tardar 30+ min'
+            echo '  - ZAP: Verifica que la app este corriendo'
+            echo '============================================'
         }
         
         unstable {
-            echo '⚠️  Pipeline inestable - Hay warnings pero no errores críticos'
+            echo 'Pipeline inestable - Hay warnings pero no errores criticos'
         }
     }
+}
