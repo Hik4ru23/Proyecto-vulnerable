@@ -69,10 +69,15 @@ pipeline {
 
         stage('Generate Documentation') {
             steps {
-                // CAMBIO AQUÍ: Se inyectan las exclusiones directamente al archivo antes de ejecutar
                 sh '''
+                    # 1. Agregamos un salto de línea por seguridad (evita que se pegue al final del archivo)
+                    echo "" >> Doxyfile
+                    
+                    # 2. Ahora sí inyectamos las exclusiones
                     echo "EXCLUDE += venv docs dependency-check-report" >> Doxyfile
                     echo "EXCLUDE_PATTERNS += */venv/* */docs/* */dependency-check-report/*" >> Doxyfile
+                    
+                    # 3. Ejecutamos
                     doxygen Doxyfile
                 '''
             }
