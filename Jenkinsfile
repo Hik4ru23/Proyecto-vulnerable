@@ -4,7 +4,6 @@ pipeline {
     environment {
         PROJECT_NAME = "pipeline-test"
         SONARQUBE_URL = "http://sonarqube:9000"
-        // Token hardcodeado (Idealmente usar credentials)
         SONARQUBE_TOKEN = "sqa_b2152858c8eb361e87d72375849dfe0a986cdb86"
         TARGET_URL = "http://172.20.190.71:5000"
     }
@@ -14,7 +13,6 @@ pipeline {
             steps {
                 sh '''
                     apt update
-                    # Instalamos python, doxygen y graphviz
                     apt install -y python3 python3-venv python3-pip doxygen graphviz
                 '''
             }
@@ -52,7 +50,8 @@ pipeline {
                                 -Dsonar.projectKey=$PROJECT_NAME \
                                 -Dsonar.sources=. \
                                 -Dsonar.host.url=$SONARQUBE_URL \
-                                -Dsonar.login=$SONARQUBE_TOKEN
+                                -Dsonar.login=$SONARQUBE_TOKEN \
+                                -Dsonar.exclusions=venv/**,docs/**,dependency-check-report/**,**/*.html,**/*.css
                         """
                     }
                 }
@@ -64,21 +63,18 @@ pipeline {
                 NVD_API_KEY = credentials('nvdApiKey')
             }
             steps {
-                // SE AGREGARON: --disableOssIndex y --disableAssembly
                 dependencyCheck additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${NVD_API_KEY} --disableOssIndex --disableAssembly", odcInstallation: 'DependencyCheck'
             }
         }
 
         stage('Generate Documentation') {
             steps {
-                // Genera la documentación usando el Doxyfile del repo
                 sh 'doxygen Doxyfile'
             }
         }
 
         stage('Publish Reports') {
             steps {
-                // Reporte 1: OWASP Dependency Check
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
@@ -88,8 +84,6 @@ pipeline {
                     reportName: 'OWASP Dependency Check Report'
                 ])
 
-                // Reporte 2: Doxygen
-                // Asegúrate que 'docs/html' coincida con el OUTPUT_DIRECTORY de tu Doxyfile
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
