@@ -69,28 +69,34 @@ pipeline {
 
         stage('Generate Documentation') {
             steps {
-                // Usamos rutas absolutas ($(pwd)) para asegurar que Doxygen sepa EXÁCTAMENTE qué ignorar
+                // Usamos $(pwd) para obtener la ruta absoluta y evitar confusiones
                 sh '''
-                    BASE_PATH=$(pwd)
+                    # Capturamos la ruta actual
+                    BASE=$(pwd)
                     
-                    cat > Doxyfile.clean <<EOF
-PROJECT_NAME           = "Proyecto Vulnerable"
-OUTPUT_DIRECTORY       = docs
-INPUT                  = .
-RECURSIVE              = YES
-# Aquí está la clave: Exclusión con ruta completa
-EXCLUDE                = "${BASE_PATH}/venv" "${BASE_PATH}/docs" "${BASE_PATH}/dependency-check-report"
-EXCLUDE_PATTERNS       = */venv/*
-GENERATE_HTML          = YES
-HAVE_DOT               = YES
-EXTRACT_ALL            = YES
-EOF
+                    echo "PROJECT_NAME      = 'Proyecto Vulnerable'" > Doxyfile.clean
+                    echo "OUTPUT_DIRECTORY  = docs" >> Doxyfile.clean
+                    echo "INPUT             = ." >> Doxyfile.clean
+                    echo "RECURSIVE         = YES" >> Doxyfile.clean
+                    
+                    # AQUÍ ESTÁ EL CAMBIO CLAVE:
+                    # Usamos la variable $BASE para decirle la ruta EXACTA que debe ignorar
+                    echo "EXCLUDE           = $BASE/venv $BASE/docs $BASE/dependency-check-report" >> Doxyfile.clean
+                    
+                    # Configuraciones extra
+                    echo "GENERATE_HTML     = YES" >> Doxyfile.clean
+                    echo "HAVE_DOT          = YES" >> Doxyfile.clean
+                    echo "EXTRACT_ALL       = YES" >> Doxyfile.clean
+                    
+                    # Verificamos el contenido antes de ejecutar (saldrá en el log)
+                    echo "--- Configuración Generada ---"
+                    cat Doxyfile.clean
+                    echo "------------------------------"
                     
                     doxygen Doxyfile.clean
                 '''
             }
         }
-
         stage('Publish Reports') {
             steps {
                 publishHTML([
