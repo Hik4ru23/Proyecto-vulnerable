@@ -1,3 +1,4 @@
 OUTPUT_DIRECTORY = docs
 GENERATE_HTML = YES
 RECURSIVE = YES
+EXCLUDE = venv docs dependency-check-report
