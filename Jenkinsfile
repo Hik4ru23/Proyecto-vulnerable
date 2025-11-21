@@ -69,18 +69,23 @@ pipeline {
 
         stage('Generate Documentation') {
             steps {
-                // AQUÍ ESTÁ LA MAGIA: Creamos el archivo limpio con TU configuración
+                // Usamos rutas absolutas ($(pwd)) para asegurar que Doxygen sepa EXÁCTAMENTE qué ignorar
                 sh '''
-                    echo "PROJECT_NAME      = 'Proyecto Vulnerable'" > Doxyfile.clean
-                    echo "OUTPUT_DIRECTORY  = docs" >> Doxyfile.clean
-                    echo "INPUT             = ." >> Doxyfile.clean
-                    echo "RECURSIVE         = YES" >> Doxyfile.clean
-                    echo "EXCLUDE           = venv docs dependency-check-report" >> Doxyfile.clean
-                    echo "EXCLUDE_PATTERNS  = */venv/*" >> Doxyfile.clean
-                    echo "GENERATE_HTML     = YES" >> Doxyfile.clean
-                    echo "HAVE_DOT          = YES" >> Doxyfile.clean
+                    BASE_PATH=$(pwd)
                     
-                    # Ejecutamos usando este archivo nuevo
+                    cat > Doxyfile.clean <<EOF
+PROJECT_NAME           = "Proyecto Vulnerable"
+OUTPUT_DIRECTORY       = docs
+INPUT                  = .
+RECURSIVE              = YES
+# Aquí está la clave: Exclusión con ruta completa
+EXCLUDE                = "${BASE_PATH}/venv" "${BASE_PATH}/docs" "${BASE_PATH}/dependency-check-report"
+EXCLUDE_PATTERNS       = */venv/*
+GENERATE_HTML          = YES
+HAVE_DOT               = YES
+EXTRACT_ALL            = YES
+EOF
+                    
                     doxygen Doxyfile.clean
                 '''
             }
