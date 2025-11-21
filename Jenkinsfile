@@ -4,16 +4,18 @@ pipeline {
     environment {
         PROJECT_NAME = "pipeline-test"
         SONARQUBE_URL = "http://sonarqube:9000"
+        // Recuerda que es mejor usar credentials() para tokens, pero lo dejo como lo enviaste
         SONARQUBE_TOKEN = "sqa_b2152858c8eb361e87d72375849dfe0a986cdb86"
         TARGET_URL = "http://172.20.190.71:5000"
     }
 
     stages {
-        stage('Install Python') {
+        stage('Install Tools') {
             steps {
                 sh '''
                     apt update
-                    apt install -y python3 python3-venv python3-pip
+                    # Se agregan doxygen y graphviz a la instalación
+                    apt install -y python3 python3-venv python3-pip doxygen graphviz
                 '''
             }
         }
@@ -28,6 +30,7 @@ pipeline {
                 '''
             }
         }
+
         stage('Python Security Audit') {
             steps {
                 sh '''
@@ -55,6 +58,7 @@ pipeline {
                 }
             }
         }
+
         stage('Dependency Check') {
             environment {
                 NVD_API_KEY = credentials('nvdApiKey')
@@ -64,8 +68,17 @@ pipeline {
             }
         }
 
+        // NUEVA ETAPA: Generar la documentación
+        stage('Generate Documentation') {
+            steps {
+                // Se asume que el archivo 'Doxyfile' ya existe en el repositorio
+                sh 'doxygen Doxyfile'
+            }
+        }
+
         stage('Publish Reports') {
             steps {
+                // Reporte 1: OWASP Dependency Check
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
@@ -74,8 +87,19 @@ pipeline {
                     reportFiles: 'dependency-check-report.html',
                     reportName: 'OWASP Dependency Check Report'
                 ])
+
+                // Reporte 2: Doxygen (NUEVO)
+                // Asegúrate que 'docs/html' coincida con el OUTPUT_DIRECTORY de tu Doxyfile
+                publishHTML([
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'docs/html',
+                    reportFiles: 'index.html',
+                    reportName: 'Doxygen Documentation',
+                    reportTitles: 'Doxygen'
+                ])
             }
         }
     }
-
 }
