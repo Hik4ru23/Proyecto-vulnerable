@@ -69,21 +69,19 @@ pipeline {
 
         stage('Generate Documentation') {
             steps {
+                // AQUÍ ESTÁ LA MAGIA: Creamos el archivo limpio con TU configuración
                 sh '''
-                    # Creamos un archivo de configuración temporal (Doxyfile.local)
-                    # 1. Heredamos todo del Doxyfile original
-                    echo "@INCLUDE = Doxyfile" > Doxyfile.local
+                    echo "PROJECT_NAME      = 'Proyecto Vulnerable'" > Doxyfile.clean
+                    echo "OUTPUT_DIRECTORY  = docs" >> Doxyfile.clean
+                    echo "INPUT             = ." >> Doxyfile.clean
+                    echo "RECURSIVE         = YES" >> Doxyfile.clean
+                    echo "EXCLUDE           = venv docs dependency-check-report" >> Doxyfile.clean
+                    echo "EXCLUDE_PATTERNS  = */venv/*" >> Doxyfile.clean
+                    echo "GENERATE_HTML     = YES" >> Doxyfile.clean
+                    echo "HAVE_DOT          = YES" >> Doxyfile.clean
                     
-                    # 2. Forzamos la configuración del directorio de salida
-                    echo "OUTPUT_DIRECTORY = docs" >> Doxyfile.local
-                    
-                    # 3. Forzamos las exclusiones (Esto sobrescribe cualquier error del archivo original)
-                    echo "EXCLUDE = venv docs dependency-check-report" >> Doxyfile.local
-                    echo "EXCLUDE_PATTERNS = */venv/* */docs/* */dependency-check-report/*" >> Doxyfile.local
-                    echo "RECURSIVE = YES" >> Doxyfile.local
-                    
-                    # 4. Ejecutamos Doxygen usando NUESTRO archivo configurado
-                    doxygen Doxyfile.local
+                    # Ejecutamos usando este archivo nuevo
+                    doxygen Doxyfile.clean
                 '''
             }
         }
