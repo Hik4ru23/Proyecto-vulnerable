@@ -70,15 +70,20 @@ pipeline {
         stage('Generate Documentation') {
             steps {
                 sh '''
-                    # 1. Agregamos un salto de línea por seguridad (evita que se pegue al final del archivo)
-                    echo "" >> Doxyfile
+                    # Creamos un archivo de configuración temporal (Doxyfile.local)
+                    # 1. Heredamos todo del Doxyfile original
+                    echo "@INCLUDE = Doxyfile" > Doxyfile.local
                     
-                    # 2. Ahora sí inyectamos las exclusiones
-                    echo "EXCLUDE += venv docs dependency-check-report" >> Doxyfile
-                    echo "EXCLUDE_PATTERNS += */venv/* */docs/* */dependency-check-report/*" >> Doxyfile
+                    # 2. Forzamos la configuración del directorio de salida
+                    echo "OUTPUT_DIRECTORY = docs" >> Doxyfile.local
                     
-                    # 3. Ejecutamos
-                    doxygen Doxyfile
+                    # 3. Forzamos las exclusiones (Esto sobrescribe cualquier error del archivo original)
+                    echo "EXCLUDE = venv docs dependency-check-report" >> Doxyfile.local
+                    echo "EXCLUDE_PATTERNS = */venv/* */docs/* */dependency-check-report/*" >> Doxyfile.local
+                    echo "RECURSIVE = YES" >> Doxyfile.local
+                    
+                    # 4. Ejecutamos Doxygen usando NUESTRO archivo configurado
+                    doxygen Doxyfile.local
                 '''
             }
         }
