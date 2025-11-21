@@ -69,34 +69,32 @@ pipeline {
 
         stage('Generate Documentation') {
             steps {
-                // Usamos $(pwd) para obtener la ruta absoluta y evitar confusiones
+                // ESTRATEGIA INFALIBLE: Whitelist (Lista blanca)
+                // 1. Buscamos solo los archivos .py, ignorando la carpeta venv
+                // 2. Pasamos esa lista exacta a Doxygen. Así NO puede mirar donde no debe.
                 sh '''
-                    # Capturamos la ruta actual
-                    BASE=$(pwd)
+                    # Encuentra archivos .py, pero PODA (prune) la carpeta venv para no entrar ahí
+                    FILES=$(find . -path "./venv" -prune -o -name "*.py" -print | tr '\n' ' ')
                     
                     echo "PROJECT_NAME      = 'Proyecto Vulnerable'" > Doxyfile.clean
                     echo "OUTPUT_DIRECTORY  = docs" >> Doxyfile.clean
-                    echo "INPUT             = ." >> Doxyfile.clean
-                    echo "RECURSIVE         = YES" >> Doxyfile.clean
                     
-                    # AQUÍ ESTÁ EL CAMBIO CLAVE:
-                    # Usamos la variable $BASE para decirle la ruta EXACTA que debe ignorar
-                    echo "EXCLUDE           = $BASE/venv $BASE/docs $BASE/dependency-check-report" >> Doxyfile.clean
+                    # Aquí está el truco: INPUT solo contiene tus archivos de código reales
+                    echo "INPUT             = $FILES" >> Doxyfile.clean
                     
-                    # Configuraciones extra
                     echo "GENERATE_HTML     = YES" >> Doxyfile.clean
                     echo "HAVE_DOT          = YES" >> Doxyfile.clean
                     echo "EXTRACT_ALL       = YES" >> Doxyfile.clean
                     
-                    # Verificamos el contenido antes de ejecutar (saldrá en el log)
-                    echo "--- Configuración Generada ---"
-                    cat Doxyfile.clean
-                    echo "------------------------------"
+                    echo "--- Archivos a documentar ---"
+                    echo $FILES
+                    echo "---------------------------"
                     
                     doxygen Doxyfile.clean
                 '''
             }
         }
+
         stage('Publish Reports') {
             steps {
                 publishHTML([
